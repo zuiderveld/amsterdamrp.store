@@ -218,6 +218,15 @@ app.get("/api/auth/me", (req, res) => {
   res.json({ user: publicUser(req.session.user) });
 });
 
+function getPublicUrl(req) {
+  const envUrl = (PUBLIC_URL || "").replace(/\/$/, "");
+  if (envUrl && !envUrl.includes("localhost")) return envUrl;
+  const proto = String(req.headers["x-forwarded-proto"] || req.protocol || "https").split(",")[0].trim();
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  if (host) return `${proto}://${host}`;
+  return envUrl || `http://localhost:${PORT}`;
+}
+
 app.get("/api/auth/discord/login", (req, res) => {
   const ret = String(req.query.return || "/");
   req.session.oauthReturn = ret.startsWith("/") ? ret : "/";
@@ -237,13 +246,13 @@ app.get("/api/auth/discord/login", (req, res) => {
   if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET) {
     return res.status(501).send(`<!doctype html><html lang="nl"><body style="font-family:sans-serif;background:#070b14;color:#ddd;padding:2rem;max-width:640px;margin:auto">
       <h1>Discord OAuth niet geconfigureerd</h1>
-      <p>Zet in <code>.env</code>: <code>DISCORD_CLIENT_ID</code>, <code>DISCORD_CLIENT_SECRET</code>, <code>DISCORD_GUILD_ID</code>.</p>
-      <p>Of tijdelijk: <code>DEV_ADMIN_BYPASS=1</code> voor lokale admin zonder Discord.</p>
+      <p>Zet in Vercel Environment Variables: <code>DISCORD_CLIENT_ID</code>, <code>DISCORD_CLIENT_SECRET</code>, <code>DISCORD_GUILD_ID</code>, <code>PUBLIC_URL</code>.</p>
       <p><a href="/" style="color:#3b82f6">Terug</a></p>
     </body></html>`);
   }
 
-  const redirectUri = `${PUBLIC_URL}/api/auth/discord/callback`;
+  const redirectUri = `${getPublicUrl(req)}/api/auth/discord/callback`;
+  req.session.oauthRedirectUri = redirectUri;
   const params = new URLSearchParams({
     client_id: DISCORD_CLIENT_ID,
     response_type: "code",
@@ -255,11 +264,12 @@ app.get("/api/auth/discord/login", (req, res) => {
 
 app.get("/api/auth/discord/callback", async (req, res) => {
   const code = req.query.code;
-  const ret = req.session.oauthReturn || "/";
+  const ret = req.session.oauthReturn || "/admin";
   if (!code) return res.redirect(ret);
 
   try {
-    const redirectUri = `${PUBLIC_URL}/api/auth/discord/callback`;
+    const redirectUri =
+      req.session.oauthRedirectUri || `${getPublicUrl(req)}/api/auth/discord/callback`;
     const tokenRes = await fetch("https://discord.com/api/oauth2/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -272,7 +282,10 @@ app.get("/api/auth/discord/callback", async (req, res) => {
       }),
     });
     const token = await tokenRes.json();
-    if (!token.access_token) throw new Error("Geen access token");
+    if (!token.access_token) {
+      console.error("Discord token error:", token);
+      throw new Error(token.error_description || token.error || "Geen access token");
+    }
 
     const meRes = await fetch("https://discord.com/api/users/@me", {
       headers: { Authorization: `Bearer ${token.access_token}` },
@@ -299,7 +312,12 @@ app.get("/api/auth/discord/callback", async (req, res) => {
     res.redirect(ret);
   } catch (err) {
     console.error("OAuth error:", err);
-    res.status(500).send("Discord-login mislukt. Probeer opnieuw.");
+    res.status(500).send(`<!doctype html><html lang="nl"><body style="font-family:sans-serif;background:#070b14;color:#ddd;padding:2rem;max-width:640px;margin:auto">
+      <h1>Discord-login mislukt</h1>
+      <p>${String(err.message || err)}</p>
+      <p>Check of <code>PUBLIC_URL</code> en Discord Redirect exact <code>https://amsterdamrp-store.vercel.app/api/auth/discord/callback</code> zijn.</p>
+      <p><a href="/api/auth/discord/login?return=/admin" style="color:#3b82f6">Opnieuw proberen</a></p>
+    </body></html>`);
   }
 });
 
