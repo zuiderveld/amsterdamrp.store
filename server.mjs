@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express from "express";
-import session from "express-session";
+import cookieSession from "cookie-session";
 import cookieParser from "cookie-parser";
 import path from "path";
 import fs from "fs";
@@ -185,17 +185,14 @@ app.set("trust proxy", 1);
 app.use(express.json({ limit: "5mb" }));
 app.use(cookieParser());
 app.use(
-  session({
-    name: "grp.sid",
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production" || process.env.VERCEL === "1",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    },
+  cookieSession({
+    name: "arp_session",
+    keys: [SESSION_SECRET, `${SESSION_SECRET}.2`],
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production" || process.env.VERCEL === "1",
+    httpOnly: true,
+    overwrite: true,
   })
 );
 
@@ -322,10 +319,9 @@ app.get("/api/auth/discord/callback", async (req, res) => {
 });
 
 app.post("/api/auth/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie("grp.sid");
-    res.json({ ok: true });
-  });
+  req.session = null;
+  res.clearCookie("arp_session");
+  res.json({ ok: true });
 });
 
 // —— Public APIs ——
@@ -422,16 +418,17 @@ app.post("/api/skins", (_req, res) => {
 
 // —— Admin APIs ——
 app.get("/api/admin/me", (req, res) => {
-  const user = req.session.user;
-  if (!user) return res.json({ ok: false, loggedIn: false, isAdmin: false });
+  const user = req.session?.user || null;
   res.json({
-    ok: true,
-    loggedIn: true,
+    ok: Boolean(user && isAdmin(user)),
+    loggedIn: Boolean(user),
     isAdmin: isAdmin(user),
     user: publicUser(user),
     adminRoleId: ADMIN_ROLE_ID,
+    roleCount: user?.roles?.length || 0,
     oauthConfigured: Boolean(DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET),
     guildConfigured: Boolean(DISCORD_GUILD_ID || getSettings().guildId),
+    guildId: DISCORD_GUILD_ID || getSettings().guildId || null,
     devBypass: DEV_ADMIN_BYPASS,
   });
 });
