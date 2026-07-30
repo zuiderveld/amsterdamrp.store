@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin | Amsterdam Roleplay</title>
   <link rel="icon" type="image/png" href="/assets/img/logo-t.png" />
-  <link rel="stylesheet" href="/admin/admin.css" />
+  <link rel="stylesheet" href="/admin/admin.css?v=20260730e" />
 </head>
 <body>
   <div id="gate" class="gate">
@@ -35,6 +35,7 @@
         <button data-tab="site" class="nav-btn">Site & onderhoud</button>
         <button data-tab="server" class="nav-btn">Server status</button>
         <button data-tab="shop" class="nav-btn">Webshop</button>
+        <button data-tab="products" class="nav-btn">Producten</button>
         <button data-tab="roles" class="nav-btn">Discord rollen</button>
         <button data-tab="leaderboards" class="nav-btn">Leaderboards</button>
         <button data-tab="payments" class="nav-btn">Betalingen</button>
@@ -85,7 +86,7 @@
             <span class="label">Shop pakketten</span>
             <strong id="ov-packages">—</strong>
             <div class="btn-row">
-              <button class="btn btn-primary" data-goto="shop">Beheer shop</button>
+              <button class="btn btn-primary" data-goto="products">Bekijk producten</button>
             </div>
           </div>
         </div>
@@ -210,10 +211,14 @@
       <!-- SHOP -->
       <section class="tab hidden" id="tab-shop">
         <div class="card">
-          <h3>Live Tebex-catalogus</h3>
-          <p class="muted small">Pakketten komen rechtstreeks uit Tebex (niet uit de lege Vercel-cache).</p>
+          <h3>Webshop ↔ tebexwrapper</h3>
+          <p class="muted small">
+            Producten uit de ingame store laden automatisch. Nieuwe/gewijzigde pakketten worden teruggeschreven naar
+            <code>tebexwrapper/data</code> (redeem + store). Herstart of wacht ~15s in-game.
+          </p>
           <div class="btn-row">
             <button class="btn btn-primary" data-action="shop-refresh">Catalogus vernieuwen</button>
+            <button class="btn btn-ok" data-action="sync-ingame">Sync naar tebexwrapper</button>
           </div>
           <p class="muted small mt" id="shop-source">Bron: —</p>
         </div>
@@ -245,12 +250,49 @@
               <input id="pkg-name" type="text" />
             </div>
             <div>
-              <label>Prijs (€)</label>
+              <label>Pakket ID (Tebex)</label>
+              <input id="pkg-id" type="text" placeholder="bijv. 7525797" />
+            </div>
+            <div>
+              <label>Prijs (€ of coins)</label>
               <input id="pkg-price" type="number" step="0.01" min="0" />
             </div>
             <div>
               <label>Korting (€)</label>
               <input id="pkg-discount" type="number" step="0.01" min="0" value="0" />
+            </div>
+            <div>
+              <label>Ingame coins (redeem)</label>
+              <input id="pkg-coins" type="number" min="0" step="1" placeholder="bijv. 50" />
+            </div>
+            <div>
+              <label>Ingame type</label>
+              <select id="pkg-ingame-type">
+                <option value="item">item</option>
+                <option value="car">car</option>
+                <option value="weapon">weapon</option>
+                <option value="vip">vip</option>
+                <option value="pack">pack</option>
+                <option value="ammo">ammo</option>
+              </select>
+            </div>
+            <div>
+              <label>Sync naar ingame store</label>
+              <select id="pkg-sync-ingame">
+                <option value="on" selected>On</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+            <div>
+              <label>Discord rol</label>
+              <select id="pkg-discord-enabled">
+                <option value="off" selected>Off</option>
+                <option value="on">On</option>
+              </select>
+            </div>
+            <div class="full">
+              <label>Discord Role ID</label>
+              <input id="pkg-discord-role" type="text" placeholder="Alleen invullen als Discord rol = On" disabled />
             </div>
             <div class="full">
               <label>Beschrijving</label>
@@ -263,9 +305,32 @@
           </div>
           <div class="btn-row mt">
             <button class="btn btn-primary" data-action="add-package">Pakket opslaan</button>
+            <button class="btn btn-ghost" data-goto="products">Bekijk alle producten →</button>
           </div>
         </div>
-        <div id="shop-list" class="mt"></div>
+      </section>
+
+      <!-- PRODUCTS -->
+      <section class="tab hidden" id="tab-products">
+        <div class="card">
+          <h3>Producten per categorie</h3>
+          <p class="muted small">Kies een categorie. Per product: <strong>Zichtbaar / Verborgen</strong> geldt voor website (/doneren) én ingame store.</p>
+          <div class="btn-row mt wrap">
+            <button class="btn btn-primary" data-action="shop-refresh">Catalogus vernieuwen</button>
+            <button class="btn btn-ok" data-action="sync-ingame">Sync naar tebexwrapper</button>
+            <button class="btn btn-ok" data-action="visibility-all-on">Alles zichtbaar</button>
+            <button class="btn btn-warn" data-action="visibility-all-off">Alles verborgen</button>
+            <button class="btn btn-ghost" data-action="visibility-cat-on">Deze categorie zichtbaar</button>
+            <button class="btn btn-ghost" data-action="visibility-cat-off">Deze categorie verborgen</button>
+            <button class="btn btn-ghost" data-goto="shop">Nieuw pakket toevoegen</button>
+          </div>
+          <p class="muted small mt" id="products-source">Bron: —</p>
+        </div>
+        <div class="card mt">
+          <h3 class="cat-heading">Categorieën</h3>
+          <div id="products-cats" class="cat-tabs"></div>
+        </div>
+        <div id="products-list" class="mt"></div>
       </section>
 
       <!-- DISCORD ROLES -->
@@ -318,6 +383,34 @@
       <!-- PAYMENTS -->
       <section class="tab hidden" id="tab-payments">
         <div class="card">
+          <h3>Betaalmethodes</h3>
+          <p class="muted small">
+            Standaard staan alle methodes <strong>uit</strong> — dan worden kopers naar Discord gestuurd.
+            Zet Stripe aan om via Stripe Checkout te laten betalen.
+          </p>
+          <div class="form-grid mt">
+            <div>
+              <label>Stripe</label>
+              <select id="pay-stripe">
+                <option value="off">Off</option>
+                <option value="on">On</option>
+              </select>
+              <p class="muted small" id="pay-stripe-hint">—</p>
+            </div>
+            <div>
+              <label>Tebex (optioneel)</label>
+              <select id="pay-tebex">
+                <option value="off">Off</option>
+                <option value="on">On</option>
+              </select>
+            </div>
+          </div>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="save-payments">Betaalmethodes opslaan</button>
+          </div>
+          <p class="muted small mt" id="pay-methods-status"></p>
+        </div>
+        <div class="card mt">
           <h3>Recente betaling toevoegen</h3>
           <div class="form-grid">
             <div>
@@ -364,6 +457,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/admin/admin.js"></script>
+  <script src="/admin/admin.js?v=20260730g"></script>
 </body>
 </html>

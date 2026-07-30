@@ -2,9 +2,17 @@
   "maintenance": false,
   "maintenanceMessage": "We zijn even bezig met onderhoud. Kom zo terug!",
   "sitePublic": true,
-  "announcement": "",
-  "announcementEnabled": false,
+  "announcement": "🔧 SERVER ONDERHOUD! | WIJ ZIJN HARD AAN HET WERKEN ⚙️ | COMMUNITY & SERVER WORDEN VERBETERD!",
+  "announcementEnabled": true,
   "announcementHistory": [
+    {
+      "text": "🔧 SERVER ONDERHOUD! | WIJ ZIJN HARD AAN HET WERKEN ⚙️ | COMMUNITY & SERVER WORDEN VERBETERD!",
+      "at": "2026-07-30T18:49:28.611Z"
+    },
+    {
+      "text": "🎉 SERVER OPENING! | ONTVANG DIRECT INGAME ⚡ | 11K+ DISCORD LEDEN!",
+      "at": "2026-07-30T18:48:45.838Z"
+    },
     {
       "text": "🔄 SERVER RESTART OVER ENKELE MINUTEN | SLA OP WAT JE DOET",
       "at": "2026-07-30T13:08:02.735Z"
@@ -26,8 +34,14 @@
   },
   "discordMembers": 522,
   "discordInvite": "https://discord.gg/rRSeCBb25A",
-  "cfxJoin": "https://cfx.re/join/pga9aey",
-  "cfxCode": "pga9aey",
+  "cfxJoin": "https://cfx.re/join/8emey4v",
+  "cfxCode": "8emey4v",
   "adminRoleId": "1521182074118082599",
-  "guildId": "1521182073967083610"
+  "guildId": "1521182073967083610",
+  "announcementUpdatedAt": "2026-07-30T18:49:38.782Z",
+  "payments": {
+    "stripe": false,
+    "tebex": false
+  },
+  "_stripeConfigured": false
 }

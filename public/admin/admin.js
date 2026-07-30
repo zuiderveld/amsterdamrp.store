@@ -4,6 +4,7 @@ const titles = {
   site: "Site & onderhoud",
   server: "Server status",
   shop: "Webshop",
+  products: "Producten",
   roles: "Discord rollen",
   leaderboards: "Leaderboards",
   payments: "Betalingen",
@@ -22,6 +23,7 @@ const PRESETS = {
 let settings = null;
 let catalog = null;
 let catalogSource = "—";
+let selectedCategoryId = null;
 let rolePackages = [];
 let roleMeta = { botConfigured: false, guildId: null };
 let leaderboards = null;
@@ -30,6 +32,15 @@ let durableStore = false;
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function toast(msg) {
   const t = $("#toast");
@@ -54,6 +65,19 @@ function setTab(name) {
   $$(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   $$(".tab").forEach((t) => t.classList.toggle("hidden", t.id !== `tab-${name}`));
   $("#page-title").textContent = titles[name] || name;
+  if (name === "products" || name === "shop" || name === "overview") {
+    renderShop();
+    updateCatalogMeta();
+    if (!(catalog?.categories || []).length) {
+      loadCatalog().then(() => {
+        updateCatalogMeta();
+        renderShop();
+      });
+    }
+  }
+  if (name === "roles") {
+    loadRoleGrants().catch(() => {});
+  }
 }
 
 function fillForms() {
@@ -87,59 +111,165 @@ function fillForms() {
   $("#link-cfx").value = settings.cfxJoin || "";
   $("#link-guild").value = settings.guildId || "";
 
-  const pill = $("#live-pill");
-  if (settings.maintenance) {
-    pill.textContent = "ONDERHOUD";
-    pill.className = "status-pill warn";
-    $("#ov-site").textContent = "In onderhoud";
-  } else {
-    pill.textContent = "OPENBAAR";
-    pill.className = "status-pill ok";
-    $("#ov-site").textContent = "Openbaar";
+  if ($("#pay-stripe")) {
+    $("#pay-stripe").value = settings.payments?.stripe ? "on" : "off";
   }
-  $("#ov-online").textContent = `${settings.server?.online ?? 0}/${settings.server?.max ?? 0}`;
-  $("#ov-discord").textContent = String(settings.discordMembers ?? 0);
+  if ($("#pay-tebex")) {
+    $("#pay-tebex").value = settings.payments?.tebex ? "on" : "off";
+  }
+  const stripeHint = $("#pay-stripe-hint");
+  if (stripeHint) {
+    stripeHint.textContent = settings._stripeConfigured
+      ? "STRIPE_SECRET_KEY is gezet."
+      : "Zet STRIPE_SECRET_KEY in Vercel Variables om Stripe te gebruiken.";
+  }
+  const payStatus = $("#pay-methods-status");
+  if (payStatus) {
+    const stripeOn = settings.payments?.stripe;
+    const tebexOn = settings.payments?.tebex;
+    if (!stripeOn && !tebexOn) {
+      payStatus.textContent = "Alle methodes UIT → checkout stuurt naar Discord.";
+    } else {
+      payStatus.textContent = `Actief: ${[stripeOn ? "Stripe" : null, tebexOn ? "Tebex" : null].filter(Boolean).join(" + ")}`;
+    }
+  }
 
+  const pill = $("#live-pill");
+  if (pill) {
+    if (settings.maintenance) {
+      pill.textContent = "ONDERHOUD";
+      pill.className = "status-pill warn";
+    } else {
+      pill.textContent = "OPENBAAR";
+      pill.className = "status-pill ok";
+    }
+  }
+  const ovSite = $("#ov-site");
+  if (ovSite) ovSite.textContent = settings.maintenance ? "In onderhoud" : "Openbaar";
+  const ovOnline = $("#ov-online");
+  if (ovOnline) ovOnline.textContent = `${settings.server?.online ?? 0}/${settings.server?.max ?? 0}`;
+  const ovDiscord = $("#ov-discord");
+  if (ovDiscord) ovDiscord.textContent = String(settings.discordMembers ?? 0);
+
+  updateCatalogMeta();
+}
+
+function updateCatalogMeta() {
   const pkgCount = (catalog?.categories || []).reduce((n, c) => n + (c.packages?.length || 0), 0);
-  $("#ov-packages").textContent = String(pkgCount);
+  const ovPkg = $("#ov-packages");
+  if (ovPkg) ovPkg.textContent = String(pkgCount);
+  const sourceText = `Bron: ${catalogSource} · ${(catalog?.categories || []).length} categorieën · ${pkgCount} producten`;
   const shopSource = $("#shop-source");
-  if (shopSource) shopSource.textContent = `Bron: ${catalogSource} · ${pkgCount} pakketten`;
+  if (shopSource) shopSource.textContent = sourceText;
+  const productsSource = $("#products-source");
+  if (productsSource) productsSource.textContent = sourceText;
 }
 
 function renderShop() {
-  const list = $("#shop-list");
   const select = $("#pkg-cat");
-  select.innerHTML = "";
-  list.innerHTML = "";
+  if (select) {
+    select.innerHTML = "";
+    for (const cat of catalog?.categories || []) {
+      const opt = document.createElement("option");
+      opt.value = cat.id;
+      opt.textContent = cat.name;
+      select.appendChild(opt);
+    }
+  }
 
-  for (const cat of catalog?.categories || []) {
-    const opt = document.createElement("option");
-    opt.value = cat.id;
-    opt.textContent = cat.name;
-    select.appendChild(opt);
+  const cats = catalog?.categories || [];
+  const tabs = $("#products-cats");
+  const list = $("#products-list");
+  if (!list) return;
 
-    const box = document.createElement("div");
-    box.className = "list-card";
-    box.innerHTML = `<header>
-      <div><strong>${escapeHtml(cat.name)}</strong><div class="meta">${escapeHtml(cat.description || "")}</div></div>
+  if (!cats.length) {
+    if (tabs) tabs.innerHTML = "";
+    list.innerHTML = `<div class="card"><p class="muted">Geen producten gevonden. Controleer <code>data/catalog.json</code> of klik <strong>Catalogus vernieuwen</strong>.</p></div>`;
+    return;
+  }
+
+  if (!selectedCategoryId || !cats.some((c) => String(c.id) === String(selectedCategoryId))) {
+    selectedCategoryId = cats[0].id;
+  }
+
+  if (tabs) {
+    tabs.innerHTML = "";
+    for (const cat of cats) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `cat-btn${String(cat.id) === String(selectedCategoryId) ? " active" : ""}`;
+      btn.dataset.selectCat = String(cat.id);
+      const count = (cat.packages || []).length;
+      btn.innerHTML = `${escapeHtml(cat.name)} <span class="cat-count">${count}</span>`;
+      tabs.appendChild(btn);
+    }
+  }
+
+  const cat = cats.find((c) => String(c.id) === String(selectedCategoryId)) || cats[0];
+  const pkgs = cat.packages || [];
+
+  const box = document.createElement("div");
+  box.className = "list-card";
+  box.innerHTML = `<header>
+    <div>
+      <strong>${escapeHtml(cat.name)}</strong>
+      <div class="meta">${pkgs.length} producten in deze categorie</div>
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" data-goto="shop">+ Pakket</button>
       <button class="btn btn-danger btn-sm" data-del-cat="${cat.id}">Verwijder categorie</button>
-    </header>`;
-    for (const pkg of cat.packages || []) {
-      const row = document.createElement("div");
-      row.className = "list-item";
-      row.innerHTML = `
+    </div>
+  </header>`;
+
+  if (!pkgs.length) {
+    const empty = document.createElement("div");
+    empty.className = "list-item";
+    empty.innerHTML = `<div class="meta">Geen producten in deze categorie</div>`;
+    box.appendChild(empty);
+  }
+
+  for (const pkg of pkgs) {
+    const grant = rolePackages.find((p) => String(p.id) === String(pkg.id));
+    const roleLabel =
+      grant?.enabled && grant?.roleIds?.length
+        ? `Discord rol: ${(grant.roleIds || []).join(", ")}`
+        : "Discord rol: uit";
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.innerHTML = `
+      <div class="pkg-main">
+        <img class="pkg-thumb" src="${escapeHtml(pkg.image || pkg.remoteImage || "/assets/img/logo-t.png")}" alt="" onerror="this.src='/assets/img/logo-t.png'" />
         <div>
           <strong>${escapeHtml(pkg.name)}</strong>
-          <div class="meta">${escapeHtml(pkg.description || "")}</div>
+          <div class="meta">ID ${escapeHtml(String(pkg.id))} · ${escapeHtml(roleLabel)}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:.75rem">
-          <span class="price">€${Number(pkg.totalPrice).toFixed(2)}</span>
-          <button class="btn btn-danger btn-sm" data-del-pkg="${cat.id}:${pkg.id}">Verwijder</button>
-        </div>`;
-      box.appendChild(row);
-    }
-    list.appendChild(box);
+      </div>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span class="price">${
+          pkg.currency === "COINS"
+            ? `${Number(pkg.totalPrice).toLocaleString("nl-NL")} coins`
+            : `€${Number(pkg.totalPrice).toFixed(2)}`
+        }</span>
+        ${
+          pkg.tebexwrapperCoins != null
+            ? `<span class="meta">→ ${Number(pkg.tebexwrapperCoins)} ingame</span>`
+            : pkg.source === "ingame"
+              ? `<span class="meta">ingame</span>`
+              : ""
+        }
+        <button class="btn ${pkg.visible !== false ? "btn-ok" : "btn-ghost"} btn-sm" data-toggle-visible="${pkg.id}" title="Zelfde setting voor website en ingame">
+          ${pkg.visible !== false ? "Zichtbaar" : "Verborgen"}
+        </button>
+        <button class="btn btn-ghost btn-sm" data-edit-pkg="${cat.id}:${pkg.id}">Bewerken</button>
+        <button class="btn btn-danger btn-sm" data-del-pkg="${cat.id}:${pkg.id}">Verwijder</button>
+      </div>`;
+    box.appendChild(row);
   }
+
+  list.innerHTML = "";
+  list.appendChild(box);
+
+  if (select && cat) select.value = String(cat.id);
 }
 
 function renderRoles() {
@@ -193,6 +323,7 @@ async function loadRoleGrants() {
 
 function renderLeaderboards() {
   const list = $("#lb-list");
+  if (!list) return;
   list.innerHTML = "";
   const boards = [
     ["coins", "Coins"],
@@ -221,6 +352,7 @@ function renderLeaderboards() {
 
 function renderPayments() {
   const list = $("#pay-list");
+  if (!list) return;
   list.innerHTML = `<div class="list-card"><header><strong>Recente betalingen</strong></header></div>`;
   const box = list.querySelector(".list-card");
   (payments || []).forEach((p, i) => {
@@ -296,28 +428,85 @@ async function publishAnnouncement(text, enabled = true) {
   toast(enabled ? "Mededeling live — blijft staan na refresh" : "Mededeling uitgezet");
 }
 
-async function reloadAll() {
-  const [s, c, l, p] = await Promise.all([
+async function loadCatalog(forceRefresh = false) {
+  const refresh = forceRefresh ? "?refresh=1" : "";
+  try {
+    const c = await api(`/api/admin/catalog${refresh}`);
+    if (c?.catalog?.categories) {
+      catalog = c.catalog;
+      catalogSource = c.source || "catalog";
+      return catalog;
+    }
+  } catch (err) {
+    console.warn("admin catalog:", err.message);
+  }
+  try {
+    const store = await api("/api/store/catalog");
+    if (store?.categories) {
+      catalog = store;
+      catalogSource = "store";
+      return catalog;
+    }
+    if (Array.isArray(store)) {
+      catalog = { categories: store };
+      catalogSource = "store";
+      return catalog;
+    }
+  } catch (err) {
+    console.warn("store catalog:", err.message);
+  }
+  if (!catalog) catalog = { categories: [] };
+  return catalog;
+}
+
+async function reloadAll(opts = {}) {
+  // Catalogus eerst + meteen tonen (niet laten crashen door andere tabs)
+  try {
+    await loadCatalog(Boolean(opts.refresh));
+  } catch (err) {
+    console.warn("catalog load:", err);
+    if (!catalog) catalog = { categories: [] };
+  }
+  updateCatalogMeta();
+  renderShop();
+
+  const settled = await Promise.allSettled([
     api("/api/admin/settings"),
-    api("/api/admin/catalog"),
     api("/api/admin/leaderboards"),
     api("/api/admin/payments"),
   ]);
-  settings = s.settings;
-  durableStore = Boolean(s.durableStore);
-  catalog = c.catalog;
-  catalogSource = c.source || "onbekend";
-  leaderboards = l.leaderboards;
-  payments = p.payments || [];
-  fillForms();
-  renderShop();
-  renderLeaderboards();
-  renderPayments();
+  const [s, l, p] = settled.map((r) => (r.status === "fulfilled" ? r.value : null));
+
+  if (s?.settings) {
+    settings = s.settings;
+    durableStore = Boolean(s.durableStore);
+  }
+  if (l?.leaderboards) leaderboards = l.leaderboards;
+  if (p?.payments) payments = p.payments || [];
+
+  try {
+    if (settings) fillForms();
+  } catch (err) {
+    console.warn("fillForms:", err);
+  }
+  try {
+    renderLeaderboards();
+  } catch (err) {
+    console.warn("leaderboards:", err);
+  }
+  try {
+    renderPayments();
+  } catch (err) {
+    console.warn("payments:", err);
+  }
   try {
     await loadRoleGrants();
   } catch {
     /* optional */
   }
+
+  updateCatalogMeta();
+  renderShop();
 }
 
 async function saveSettings(patch) {
@@ -348,9 +537,41 @@ async function handleAction(action) {
         break;
       }
       case "shop-refresh":
-        await reloadAll();
+        await reloadAll({ refresh: true });
+        setTab("products");
         toast(`Catalogus: ${catalogSource} (${(catalog?.categories || []).reduce((n, c) => n + (c.packages?.length || 0), 0)} pakketten)`);
         break;
+      case "sync-ingame": {
+        const res = await api("/api/admin/catalog/sync-ingame", { method: "POST", body: "{}" });
+        catalog = res.catalog || catalog;
+        renderShop();
+        updateCatalogMeta();
+        const sync = res.sync || {};
+        toast(
+          sync.ok
+            ? `Gesynchroniseerd → redeem ${sync.redeem?.count ?? 0}, store ${sync.storeProducts ?? 0}`
+            : `Sync mislukt: ${sync.reason || "onbekend"}`
+        );
+        break;
+      }
+      case "visibility-all-on":
+      case "visibility-all-off":
+      case "visibility-cat-on":
+      case "visibility-cat-off": {
+        const visible = action.endsWith("-on");
+        const onlyCat = action.includes("-cat-");
+        const label = onlyCat ? "deze categorie" : "alle producten";
+        if (!confirm(`${visible ? "Zichtbaar" : "Verborgen"} zetten voor ${label}? (website + ingame)`)) break;
+        const body = { visible, scope: onlyCat ? "category" : "all" };
+        if (onlyCat) body.categoryId = selectedCategoryId;
+        const res = await api("/api/admin/catalog/visibility", {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+        await reloadAll();
+        toast(`${res.count || 0} producten ${visible ? "zichtbaar" : "verborgen"}`);
+        break;
+      }
       case "roles-reload":
         await loadRoleGrants();
         toast("Rollen vernieuwd");
@@ -436,6 +657,19 @@ async function handleAction(action) {
           guildId: $("#link-guild").value,
         });
         break;
+      case "save-payments":
+        await saveSettings({
+          payments: {
+            stripe: $("#pay-stripe")?.value === "on",
+            tebex: $("#pay-tebex")?.value === "on",
+          },
+        });
+        toast(
+          $("#pay-stripe")?.value === "on" || $("#pay-tebex")?.value === "on"
+            ? "Betaalmethodes opgeslagen"
+            : "Alles uit — checkout gaat naar Discord"
+        );
+        break;
       case "add-category":
         await api("/api/admin/catalog/category", {
           method: "POST",
@@ -449,23 +683,50 @@ async function handleAction(action) {
         await reloadAll();
         toast("Categorie toegevoegd");
         break;
-      case "add-package":
-        await api("/api/admin/catalog/package", {
+      case "add-package": {
+        const discordOn = $("#pkg-discord-enabled")?.value === "on";
+        const discordRole = ($("#pkg-discord-role")?.value || "").trim();
+        if (discordOn && !/^\d{17,20}$/.test(discordRole)) {
+          toast("Zet Discord rol op Off, of vul een geldige Role ID in");
+          break;
+        }
+        const pkgIdRaw = ($("#pkg-id")?.value || "").trim();
+        const coinsRaw = ($("#pkg-coins")?.value || "").trim();
+        const res = await api("/api/admin/catalog/package", {
           method: "POST",
           body: JSON.stringify({
             categoryId: $("#pkg-cat").value,
             pkg: {
+              id: pkgIdRaw || undefined,
               name: $("#pkg-name").value,
               description: $("#pkg-desc").value,
               totalPrice: Number($("#pkg-price").value),
               discount: Number($("#pkg-discount").value),
               image: $("#pkg-image").value,
+              tebexwrapperCoins: coinsRaw === "" ? undefined : Number(coinsRaw),
+              ingameType: $("#pkg-ingame-type")?.value || "item",
+              syncIngame: $("#pkg-sync-ingame")?.value !== "off",
+              discordRoleEnabled: discordOn,
+              discordRoleId: discordOn ? discordRole : "",
             },
           }),
         });
+        const savedId = res.package?.id || pkgIdRaw;
+        if (savedId) {
+          await api(`/api/admin/role-grants/${savedId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              enabled: discordOn,
+              roleIds: discordOn ? discordRole : "",
+              label: $("#pkg-name").value || "",
+            }),
+          });
+        }
         await reloadAll();
-        toast("Pakket opgeslagen");
+        const synced = res.storeSync?.ok || res.redeemSync?.ok;
+        toast(synced ? "Pakket opgeslagen + gesync’t naar tebexwrapper" : "Pakket opgeslagen");
         break;
+      }
       case "lb-add": {
         const board = $("#lb-board").value;
         const next = { ...leaderboards };
@@ -550,6 +811,34 @@ document.addEventListener("click", async (e) => {
   const nav = e.target.closest(".nav-btn");
   if (nav) return setTab(nav.dataset.tab);
 
+  const selectCat = e.target.closest("[data-select-cat]");
+  if (selectCat) {
+    selectedCategoryId = selectCat.dataset.selectCat;
+    renderShop();
+    return;
+  }
+
+  const toggleVis = e.target.closest("[data-toggle-visible]");
+  if (toggleVis) {
+    const id = toggleVis.dataset.toggleVisible;
+    const pkg = (catalog?.categories || [])
+      .flatMap((c) => c.packages || [])
+      .find((p) => String(p.id) === String(id));
+    const next = !(pkg?.visible !== false);
+    try {
+      const res = await api(`/api/admin/catalog/visibility/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify({ visible: next }),
+      });
+      if (pkg) pkg.visible = Boolean(res.visible);
+      renderShop();
+      toast(next ? "Zichtbaar op website + ingame" : "Verborgen op website + ingame");
+    } catch (err) {
+      toast(err.message || "Zichtbaarheid opslaan mislukt");
+    }
+    return;
+  }
+
   const goto = e.target.closest("[data-goto]");
   if (goto) return setTab(goto.dataset.goto);
 
@@ -570,6 +859,37 @@ document.addEventListener("click", async (e) => {
     await api(`/api/admin/catalog/package/${catId}/${pkgId}`, { method: "DELETE" });
     await reloadAll();
     return toast("Pakket verwijderd");
+  }
+
+  const editPkg = e.target.closest("[data-edit-pkg]");
+  if (editPkg) {
+    const [catId, pkgId] = editPkg.dataset.editPkg.split(":");
+    const cat = (catalog?.categories || []).find((c) => String(c.id) === String(catId));
+    const pkg = (cat?.packages || []).find((p) => String(p.id) === String(pkgId));
+    if (!pkg) return toast("Pakket niet gevonden");
+    $("#pkg-cat").value = String(catId);
+    $("#pkg-name").value = pkg.name || "";
+    $("#pkg-id").value = String(pkg.id || "");
+    $("#pkg-price").value = Number(pkg.totalPrice || 0);
+    $("#pkg-discount").value = Number(pkg.discount || 0);
+    if ($("#pkg-coins")) {
+      $("#pkg-coins").value =
+        pkg.tebexwrapperCoins != null ? Number(pkg.tebexwrapperCoins) : pkg.ingameCoins != null ? Number(pkg.ingameCoins) : "";
+    }
+    if ($("#pkg-ingame-type")) $("#pkg-ingame-type").value = pkg.ingameType || pkg.type || "item";
+    if ($("#pkg-sync-ingame")) {
+      $("#pkg-sync-ingame").value = pkg.syncIngame === false && pkg.source !== "ingame" ? "off" : "on";
+    }
+    $("#pkg-desc").value = pkg.description || "";
+    $("#pkg-image").value = pkg.image || pkg.remoteImage || "/assets/img/logo-t.png";
+    const grant = rolePackages.find((p) => String(p.id) === String(pkg.id));
+    const discordOn = Boolean(grant?.enabled && grant?.roleIds?.length);
+    $("#pkg-discord-enabled").value = discordOn ? "on" : "off";
+    $("#pkg-discord-role").value = discordOn ? (grant.roleIds || []).join(", ") : "";
+    syncDiscordRoleField();
+    setTab("shop");
+    $("#pkg-name")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return toast("Pakket in het formulier geladen");
   }
 
   const delLb = e.target.closest("[data-del-lb]");
@@ -618,6 +938,20 @@ document.addEventListener("click", async (e) => {
 
 $("#announce-text")?.addEventListener("input", updateAnnouncePreview);
 $("#announce-on")?.addEventListener("change", updateAnnouncePreview);
+
+function syncDiscordRoleField() {
+  const on = $("#pkg-discord-enabled")?.value === "on";
+  const input = $("#pkg-discord-role");
+  if (!input) return;
+  input.disabled = !on;
+  if (!on) input.placeholder = "Zet Discord rol op On om een Role ID in te vullen";
+  else {
+    input.placeholder = "Discord Role ID";
+    input.focus();
+  }
+}
+$("#pkg-discord-enabled")?.addEventListener("change", syncDiscordRoleField);
+syncDiscordRoleField();
 
 $("#logout")?.addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: "{}" });

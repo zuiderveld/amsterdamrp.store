@@ -19,6 +19,18 @@ import {
   getTebexwrapperPath,
   readRedeemPackages,
   annotateCatalogWithRedeem,
+  readIngameStoreCatalog,
+  ingameStoreToWebCatalog,
+  mergeWebAndIngameCatalog,
+  syncCatalogToTebexwrapper,
+  upsertWebStoreProduct,
+  writeRedeemPackagesOverlay,
+  removeWebStoreProduct,
+  annotateCatalogVisibility,
+  isProductVisible,
+  setProductVisibility,
+  setManyProductsVisibility,
+  readProductVisibility,
 } from "./lib/tebexwrapper.mjs";
 import {
   readRoleGrants,
@@ -33,6 +45,18 @@ import {
   getDiscordGuildIdForRoles,
 } from "./lib/discord-roles.mjs";
 
+import {
+  createNativeOrder,
+  getCheckoutProvider,
+  listOrders,
+  updateOrder,
+  getOrder,
+} from "./lib/orders.mjs";
+import {
+  isStripeConfigured,
+  createStripeCheckoutSession,
+  retrieveStripeSession,
+} from "./lib/stripe.mjs";
 import {
   hasDurableSettingsStore,
   loadSettingsAsync,
@@ -122,6 +146,11 @@ const defaultSettings = () => ({
   cfxCode: "pga9aey",
   adminRoleId: ADMIN_ROLE_ID,
   guildId: DISCORD_GUILD_ID,
+  // Alle betaalmethodes standaard UIT → checkout stuurt naar Discord
+  payments: {
+    stripe: false,
+    tebex: false,
+  },
 });
 
 function normalizeSettings(s) {
@@ -131,7 +160,52 @@ function normalizeSettings(s) {
     const m = String(s.cfxJoin).match(/join\/([a-z0-9]+)/i);
     if (m) s.cfxCode = m[1];
   }
+  s.payments = {
+    stripe: false,
+    tebex: false,
+    ...(s.payments && typeof s.payments === "object" ? s.payments : {}),
+  };
+  s.payments.stripe = Boolean(s.payments.stripe);
+  s.payments.tebex = Boolean(s.payments.tebex);
   return s;
+}
+
+function getEnabledPaymentMethods(settings = getSettings()) {
+  const p = settings.payments || {};
+  return {
+    stripe: Boolean(p.stripe) && isStripeConfigured(),
+    tebex: Boolean(p.tebex) && Boolean(getTebexSecret() || getTebexPublicToken()),
+    stripeConfigured: isStripeConfigured(),
+    anyEnabled: (Boolean(p.stripe) && isStripeConfigured()) || (Boolean(p.tebex) && Boolean(getTebexSecret() || getTebexPublicToken())),
+  };
+}
+
+async function fulfillPaidOrder({ order, userId }) {
+  if (!order) return { granted: [] };
+  const packageIds = (order.items || []).map((i) => Number(i.id)).filter((id) => id > 0);
+  const { roleIds, matchedPackages } = roleIdsForPackages(packageIds);
+  let granted = [];
+  if (roleIds.length && userId) {
+    const grant = await grantDiscordRoles({
+      userId,
+      roleIds,
+      reason: `Betaalde order ${order.id}`,
+      guildId: getDiscordGuildIdForRoles(getSettings().guildId),
+    });
+    granted = grant.granted || [];
+    if (grant.ok) {
+      markRolesClaimed({
+        transactionKey: `${userId}:${order.id}:paid`,
+        discordId: userId,
+        packageIds: matchedPackages,
+        granted,
+        serverId: order.serverId || null,
+        orderId: order.id,
+      });
+    }
+  }
+  updateOrder(order.id, { status: "paid", paidAt: new Date().toISOString(), granted });
+  return { granted, matchedPackages };
 }
 
 function getSettings() {
@@ -149,31 +223,57 @@ async function persistSettings(next) {
 
 let catalogCache = { at: 0, data: null };
 
-async function getLiveCatalog() {
+function invalidateCatalogCache() {
+  catalogCache = { at: 0, data: null };
+}
+
+function readLocalCatalog() {
+  const local = seedCatalogFallback(DATA, SEED_DATA);
+  return local?.categories?.length ? local : { categories: [] };
+}
+
+/**
+ * Catalogus: lokale/Tebex webshop + ingame tebexwrapper StoreData.
+ */
+async function getLiveCatalog({ forceRefresh = false } = {}) {
   const redeem = readRedeemPackages();
-  if (catalogCache.data && Date.now() - catalogCache.at < 60_000) {
-    return annotateCatalogWithRedeem(catalogCache.data, redeem);
+  if (!forceRefresh && catalogCache.data && Date.now() - catalogCache.at < 60_000) {
+    return annotateCatalogVisibility(annotateCatalogWithRedeem(catalogCache.data, redeem));
   }
-  try {
-    if (getTebexSecret()) {
-      const packages = await fetchTebexPackages();
+
+  let web = readLocalCatalog();
+  const needTebex = forceRefresh || !web.categories.length;
+
+  if (needTebex && getTebexSecret()) {
+    try {
+      const packages = await Promise.race([
+        fetchTebexPackages(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Tebex catalog timeout")), 10_000)),
+      ]);
       const catalog = packagesToCatalog(packages);
       if (catalog.categories.length) {
-        catalogCache = { at: Date.now(), data: catalog };
+        web = catalog;
         try {
           writeJson("catalog.json", catalog);
         } catch {
           /* ignore */
         }
-        return annotateCatalogWithRedeem(catalog, redeem);
       }
+    } catch (err) {
+      console.error("Tebex catalog error:", err.message);
     }
-  } catch (err) {
-    console.error("Tebex catalog error:", err.message);
   }
-  const fallback = seedCatalogFallback(DATA, SEED_DATA);
-  return annotateCatalogWithRedeem(fallback, redeem);
+
+  const ingame = readIngameStoreCatalog();
+  const ingameWeb = ingameStoreToWebCatalog(ingame);
+  const merged = mergeWebAndIngameCatalog(web, ingameWeb);
+
+  catalogCache = { at: Date.now(), data: merged };
+  return annotateCatalogVisibility(annotateCatalogWithRedeem(merged, redeem));
 }
+
+// Warm catalog bij start zodat admin/shop niet leeg starten
+getLiveCatalog().catch((err) => console.error("Catalog warmup:", err.message));
 
 /** Live caches (refreshed in background) */
 const live = {
@@ -473,7 +573,15 @@ app.get("/api/admin/live-status", requireAdmin, async (_req, res) => {
 });
 
 app.get("/api/store/catalog", async (_req, res) => {
-  res.json(await getLiveCatalog());
+  const catalog = await getLiveCatalog();
+  // Alleen producten die zichtbaar staan (zelfde setting als ingame)
+  const categories = (catalog.categories || [])
+    .map((cat) => ({
+      ...cat,
+      packages: (cat.packages || []).filter((p) => isProductVisible(p)),
+    }))
+    .filter((cat) => (cat.packages || []).length > 0);
+  res.json({ ...catalog, categories });
 });
 
 app.get("/api/store/recent-payments", async (_req, res) => {
@@ -515,49 +623,177 @@ app.get("/api/server/verify", (req, res) => {
 app.get("/api/store/status", (_req, res) => {
   const redeem = readRedeemPackages();
   const wrapperPath = getTebexwrapperPath();
+  const settings = getSettings();
+  const methods = getEnabledPaymentMethods(settings);
   res.json({
     ok: true,
+    checkoutProvider: methods.stripe ? "stripe" : methods.tebex ? "tebex" : "discord",
+    checkoutMode: methods.stripe ? "stripe" : methods.tebex ? "tebex" : "discord",
+    payments: settings.payments,
+    paymentMethods: methods,
+    stripeConfigured: methods.stripeConfigured,
     tebexSecret: Boolean(getTebexSecret()),
     tebexPublicToken: Boolean(getTebexPublicToken()),
-    checkoutMode: getTebexPublicToken() ? "headless" : getTebexSecret() ? "storefront" : "disabled",
     tebexwrapperLinked: Boolean(wrapperPath),
     tebexwrapperPath: wrapperPath || null,
     redeemPackageIds: Object.keys(redeem.packages).map(Number),
+    discordInvite: settings.discordInvite,
     deliveryCommand: "matrixwrapper:sendProduct {id} {packageId} {price} {transaction}",
   });
 });
 
 app.post("/api/store/checkout", async (req, res) => {
   try {
+    const settings = await getSettingsAsync();
+    const methods = getEnabledPaymentMethods(settings);
+
+    // Geen Stripe/Tebex aan → altijd Discord (ook zonder login)
+    if (!methods.anyEnabled) {
+      const invite = settings.discordInvite || "https://discord.gg/rRSeCBb25A";
+      return res.json({
+        ok: true,
+        mode: "discord",
+        reason: "payments_disabled",
+        message: "Online betalen staat uit. Je wordt naar Discord gestuurd.",
+        checkout: invite,
+      });
+    }
+
     if (!req.session?.user) {
       return res.json({ ok: false, reason: "not_logged_in" });
     }
     const { items, serverId, coupon } = req.body || {};
     const base = getPublicUrl(req);
-    const result = await createCheckout({
-      items,
-      serverId,
-      coupon,
-      completeUrl: `${base}/doneren/cart?paid=1`,
-      cancelUrl: `${base}/doneren/cart`,
-    });
-    if (result.ok) {
-      if (result.ident) req.session.basketIdent = result.ident;
-      const packageIds = (items || [])
-        .map((i) => Number(i.id))
-        .filter((id) => id > 0);
-      req.session.pendingRoleClaim = {
-        packageIds,
-        serverId: String(serverId || ""),
-        discordId: String(req.session.user.id),
-        at: Date.now(),
-        ident: result.ident || null,
-      };
+    const packageIds = (items || [])
+      .map((i) => Number(i.id))
+      .filter((id) => id > 0);
+
+    const catalog = await getLiveCatalog();
+
+    if (methods.stripe) {
+      const created = createNativeOrder({
+        user: req.session.user,
+        items,
+        serverId,
+        coupon,
+        catalogPackages: catalog.categories || [],
+        provider: "stripe",
+        status: "pending_payment",
+      });
+      if (!created.ok) return res.json(created);
+
+      if (Number(created.order.total) <= 0) {
+        const fulfilled = await fulfillPaidOrder({
+          order: created.order,
+          userId: req.session.user.id,
+        });
+        return res.json({
+          ok: true,
+          mode: "native",
+          orderId: created.order.id,
+          granted: fulfilled.granted,
+          message: `Bestelling ${created.order.id} geplaatst.`,
+          checkout: `${base}/doneren/cart?ordered=1&order=${encodeURIComponent(created.order.id)}`,
+        });
+      }
+
+      try {
+        const session = await createStripeCheckoutSession({
+          order: created.order,
+          successUrl: `${base}/doneren/cart?paid=1&order=${encodeURIComponent(created.order.id)}&session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${base}/doneren/cart?cancelled=1`,
+        });
+        updateOrder(created.order.id, { stripeSessionId: session.id });
+        req.session.pendingRoleClaim = {
+          packageIds,
+          serverId: String(serverId || ""),
+          discordId: String(req.session.user.id),
+          at: Date.now(),
+          ident: created.order.id,
+          provider: "stripe",
+          verified: false,
+        };
+        return res.json({
+          ok: true,
+          mode: "stripe",
+          orderId: created.order.id,
+          checkout: session.url,
+        });
+      } catch (err) {
+        updateOrder(created.order.id, { status: "stripe_error", error: err.message });
+        return res.json({ ok: false, reason: "stripe_error", detail: err.message });
+      }
     }
-    return res.json(result);
+
+    if (methods.tebex) {
+      const result = await createCheckout({
+        items,
+        serverId,
+        coupon,
+        completeUrl: `${base}/doneren/cart?paid=1`,
+        cancelUrl: `${base}/doneren/cart`,
+      });
+      if (result.ok) {
+        if (result.ident) req.session.basketIdent = result.ident;
+        req.session.pendingRoleClaim = {
+          packageIds,
+          serverId: String(serverId || ""),
+          discordId: String(req.session.user.id),
+          at: Date.now(),
+          ident: result.ident || null,
+          provider: "tebex",
+        };
+      }
+      return res.json(result);
+    }
+
+    const invite = settings.discordInvite || "https://discord.gg/rRSeCBb25A";
+    return res.json({
+      ok: true,
+      mode: "discord",
+      checkout: invite,
+      message: "Geen actieve betaalmethode. Je wordt naar Discord gestuurd.",
+    });
   } catch (err) {
     console.error("Checkout error:", err);
-    return res.json({ ok: false, reason: "tebex_error", detail: err.message });
+    return res.json({ ok: false, reason: "checkout_error", detail: err.message });
+  }
+});
+
+app.get("/api/store/stripe/confirm", async (req, res) => {
+  try {
+    const sessionId = String(req.query.session_id || "");
+    const orderId = String(req.query.order || "");
+    if (!sessionId) return res.json({ ok: false, reason: "bad_session" });
+
+    const session = await retrieveStripeSession(sessionId);
+    const paid = session.payment_status === "paid" || session.status === "complete";
+    if (!paid) return res.json({ ok: false, reason: "not_paid", status: session.payment_status });
+
+    const id = orderId || session.metadata?.orderId || session.client_reference_id;
+    let order = id ? getOrder(id) : null;
+    if (!order && session.metadata?.orderId) order = getOrder(session.metadata.orderId);
+    if (!order) return res.json({ ok: false, reason: "order_not_found" });
+
+    if (order.status === "paid") {
+      return res.json({ ok: true, alreadyPaid: true, orderId: order.id, granted: order.granted || [] });
+    }
+
+    const userId = req.session?.user?.id || order.discord?.id || session.metadata?.discordId;
+    const fulfilled = await fulfillPaidOrder({ order, userId });
+    req.session.pendingRoleClaim = {
+      packageIds: (order.items || []).map((i) => Number(i.id)),
+      serverId: order.serverId,
+      discordId: String(userId || ""),
+      at: Date.now(),
+      ident: order.id,
+      provider: "stripe",
+      verified: true,
+    };
+    return res.json({ ok: true, orderId: order.id, granted: fulfilled.granted || [] });
+  } catch (err) {
+    console.error("stripe confirm:", err);
+    return res.json({ ok: false, reason: "stripe_error", detail: err.message });
   }
 });
 
@@ -599,9 +835,12 @@ app.post("/api/store/claim-roles", async (req, res) => {
       return res.json({ ok: true, alreadyClaimed: true, granted: [], matchedPackages });
     }
 
-    // Prefer verifying against recent Tebex payments for this username
-    let verified = !getTebexSecret();
-    if (getTebexSecret() && pending?.serverId) {
+    // Stripe: only trust after /stripe/confirm set verified=true
+    let verified = Boolean(pending?.verified || pending?.provider === "native");
+    if (!verified && pending?.provider === "stripe") {
+      verified = false;
+    }
+    if (!verified && getTebexSecret() && pending?.serverId && pending?.provider !== "stripe") {
       try {
         const payments = await fetchTebexPayments(40);
         const list = Array.isArray(payments) ? payments : payments?.data || [];
@@ -614,10 +853,9 @@ app.post("/api/store/claim-roles", async (req, res) => {
         });
       } catch (err) {
         console.error("claim-roles payment verify:", err.message);
-        // Allow claim shortly after checkout redirect if verify fails
         verified = Boolean(pending?.at && Date.now() - pending.at < 30 * 60 * 1000);
       }
-    } else if (pending?.at && Date.now() - pending.at < 30 * 60 * 1000) {
+    } else if (!verified && pending?.at && Date.now() - pending.at < 30 * 60 * 1000) {
       verified = true;
     }
 
@@ -709,10 +947,12 @@ app.get("/api/admin/me", (req, res) => {
 });
 
 app.get("/api/admin/settings", requireAdmin, async (_req, res) => {
+  const settings = await getSettingsAsync();
   res.json({
     ok: true,
-    settings: await getSettingsAsync(),
+    settings: { ...settings, _stripeConfigured: isStripeConfigured() },
     durableStore: hasDurableSettingsStore(),
+    paymentMethods: getEnabledPaymentMethods(settings),
   });
 });
 
@@ -720,6 +960,12 @@ app.put("/api/admin/settings", requireAdmin, async (req, res) => {
   const current = await getSettingsAsync();
   const next = { ...current, ...req.body, adminRoleId: ADMIN_ROLE_ID };
   if (req.body.server) next.server = { ...current.server, ...req.body.server };
+  if (req.body.payments) {
+    next.payments = {
+      ...(current.payments || { stripe: false, tebex: false }),
+      ...req.body.payments,
+    };
+  }
 
   if (
     typeof req.body.announcement === "string" &&
@@ -852,26 +1098,101 @@ app.put("/api/admin/role-grants/:packageId", requireAdmin, (req, res) => {
   });
 });
 
-app.get("/api/admin/catalog", requireAdmin, async (_req, res) => {
-  const catalog = await getLiveCatalog();
+app.get("/api/admin/catalog", requireAdmin, async (req, res) => {
+  const forceRefresh = String(req.query.refresh || "") === "1";
+  const catalog = await getLiveCatalog({ forceRefresh });
+  const ingame = readIngameStoreCatalog();
+  const local = readLocalCatalog();
+  const source = forceRefresh && getTebexSecret()
+    ? "tebex+ingame"
+    : local.categories.length
+      ? `catalog+${ingame.source}`
+      : getTebexSecret()
+        ? "tebex+ingame"
+        : `seed+${ingame.source}`;
   res.json({
     ok: true,
     catalog,
-    source: getTebexSecret() ? "tebex" : "seed",
+    source,
+    tebexwrapperPath: getTebexwrapperPath() || null,
+    ingameSource: ingame.source,
+    categoryCount: catalog?.categories?.length || 0,
+    packageCount: (catalog?.categories || []).reduce((n, c) => n + (c.packages?.length || 0), 0),
   });
 });
 
+app.post("/api/admin/catalog/sync-ingame", requireAdmin, async (_req, res) => {
+  const catalog = await getLiveCatalog({ forceRefresh: true });
+  const sync = syncCatalogToTebexwrapper(catalog);
+  invalidateCatalogCache();
+  res.json({ ok: sync.ok, sync, catalog: await getLiveCatalog({ forceRefresh: true }) });
+});
+
+app.put("/api/admin/catalog/visibility/:productId", requireAdmin, (req, res) => {
+  const visible = req.body?.visible !== false && req.body?.visible !== "off";
+  const result = setProductVisibility(req.params.productId, visible);
+  invalidateCatalogCache();
+  res.json({
+    ok: result.ok,
+    ...result,
+    note: "Zelfde zichtbaarheid voor website (/doneren) en ingame store",
+  });
+});
+
+app.put("/api/admin/catalog/visibility", requireAdmin, async (req, res) => {
+  const visible = req.body?.visible !== false && req.body?.visible !== "off";
+  const scope = String(req.body?.scope || "all"); // all | category
+  const catalog = await getLiveCatalog();
+  let cats = catalog?.categories || [];
+  if (scope === "category" && req.body?.categoryId != null) {
+    cats = cats.filter((c) => String(c.id) === String(req.body.categoryId));
+  }
+  const ids = cats.flatMap((c) => (c.packages || []).map((p) => p.id));
+  const result = setManyProductsVisibility(ids, visible);
+  invalidateCatalogCache();
+  res.json({
+    ok: result.ok,
+    ...result,
+    note: "Zelfde zichtbaarheid voor website én ingame",
+  });
+});
+
+app.get("/api/admin/catalog/visibility", requireAdmin, (_req, res) => {
+  res.json({ ok: true, ...readProductVisibility() });
+});
+
 app.put("/api/admin/catalog", requireAdmin, (req, res) => {
-  writeJson("catalog.json", req.body.catalog || req.body);
-  res.json({ ok: true });
+  const next = req.body.catalog || req.body;
+  writeJson("catalog.json", next);
+  invalidateCatalogCache();
+  const sync = syncCatalogToTebexwrapper(next);
+  catalogCache = { at: Date.now(), data: next };
+  res.json({ ok: true, catalog: next, sync });
 });
 
 app.post("/api/admin/catalog/package", requireAdmin, (req, res) => {
-  const catalog = readJson("catalog.json", { categories: [] });
+  const catalog = readLocalCatalog();
   const { categoryId, pkg } = req.body;
-  const cat = catalog.categories.find((c) => String(c.id) === String(categoryId));
+  let cat = catalog.categories.find((c) => String(c.id) === String(categoryId));
+
+  // Ingame categorie (nog niet in lokale catalog) → aanmaken
+  if (!cat && String(categoryId).startsWith("ingame-")) {
+    const key = String(categoryId).replace(/^ingame-/, "");
+    cat = {
+      id: categoryId,
+      name: pkg.categoryName || key,
+      slug: key,
+      categoryKey: key,
+      description: "",
+      packages: [],
+      source: "ingame",
+    };
+    catalog.categories.push(cat);
+  }
+
   if (!cat) return res.status(404).json({ ok: false, reason: "Categorie niet gevonden" });
   const id = pkg.id || Date.now();
+  const syncIngame = pkg.syncIngame !== false;
   const item = {
     id,
     name: pkg.name || "Nieuw pakket",
@@ -880,46 +1201,97 @@ app.post("/api/admin/catalog/package", requireAdmin, (req, res) => {
     image: pkg.image || "/assets/img/logo-t.png",
     totalPrice: Number(pkg.totalPrice) || 0,
     discount: Number(pkg.discount) || 0,
-    currency: pkg.currency || "EUR",
+    currency: pkg.currency || (syncIngame && !Number(pkg.id) ? "COINS" : "EUR"),
+    tebexwrapperCoins: pkg.tebexwrapperCoins != null ? Number(pkg.tebexwrapperCoins) : undefined,
+    ingameCoins: pkg.ingameCoins != null ? Number(pkg.ingameCoins) : undefined,
+    ingameType: pkg.ingameType || pkg.type || undefined,
+    amount: pkg.amount != null ? Number(pkg.amount) : 1,
+    syncIngame,
+    source: cat.source === "ingame" || syncIngame ? "ingame" : "web",
+    categoryKey: cat.categoryKey || cat.slug,
+    ingame: Boolean(cat.source === "ingame" || syncIngame),
   };
   const idx = cat.packages.findIndex((p) => String(p.id) === String(id));
   if (idx >= 0) cat.packages[idx] = { ...cat.packages[idx], ...item };
   else cat.packages.push(item);
   writeJson("catalog.json", catalog);
-  res.json({ ok: true, catalog });
+  invalidateCatalogCache();
+
+  if (pkg.discordRoleEnabled !== undefined || pkg.discordRoleId !== undefined) {
+    upsertPackageRoleGrant(id, {
+      enabled: Boolean(pkg.discordRoleEnabled) && Boolean(pkg.discordRoleId),
+      roleIds: pkg.discordRoleId || "",
+      label: item.name,
+    });
+  }
+
+  // → tebexwrapper (redeem + store)
+  const coins = item.tebexwrapperCoins ?? item.ingameCoins;
+  let redeemSync = null;
+  if (Number(id) > 0 && coins != null) {
+    redeemSync = writeRedeemPackagesOverlay({ [String(id)]: Number(coins) });
+  }
+  let storeSync = null;
+  if (item.syncIngame || item.ingame || item.currency === "COINS") {
+    storeSync = upsertWebStoreProduct({
+      categoryKey: item.categoryKey || cat.slug || "webshop",
+      category: { title: cat.name, description: cat.description || "" },
+      product: {
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        price: item.currency === "COINS" ? item.totalPrice : coins ?? item.totalPrice,
+        image: item.image,
+        type: item.ingameType || "item",
+        amount: item.amount || 1,
+        discordRoleId: pkg.discordRoleId,
+      },
+    });
+  }
+
+  res.json({ ok: true, catalog, package: item, redeemSync, storeSync });
 });
 
 app.delete("/api/admin/catalog/package/:categoryId/:packageId", requireAdmin, (req, res) => {
-  const catalog = readJson("catalog.json", { categories: [] });
+  const catalog = readLocalCatalog();
   const cat = catalog.categories.find((c) => String(c.id) === String(req.params.categoryId));
   if (!cat) return res.status(404).json({ ok: false });
   cat.packages = cat.packages.filter((p) => String(p.id) !== String(req.params.packageId));
   writeJson("catalog.json", catalog);
+  invalidateCatalogCache();
+  removeWebStoreProduct(cat.categoryKey || cat.slug, req.params.packageId);
   res.json({ ok: true, catalog });
 });
 
 app.post("/api/admin/catalog/category", requireAdmin, (req, res) => {
-  const catalog = readJson("catalog.json", { categories: [] });
+  const catalog = readLocalCatalog();
   const name = req.body.name || "Nieuwe categorie";
   const slug = (req.body.slug || name)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+  const categoryKey = (req.body.categoryKey || slug).replace(/[^a-z0-9_]+/gi, "_");
   catalog.categories.push({
     id: Date.now(),
     name,
     slug,
+    categoryKey,
     description: req.body.description || "",
     packages: [],
+    source: req.body.ingame ? "ingame" : "web",
   });
   writeJson("catalog.json", catalog);
+  invalidateCatalogCache();
+  catalogCache = { at: Date.now(), data: catalog };
   res.json({ ok: true, catalog });
 });
 
 app.delete("/api/admin/catalog/category/:id", requireAdmin, (req, res) => {
-  const catalog = readJson("catalog.json", { categories: [] });
+  const catalog = readLocalCatalog();
   catalog.categories = catalog.categories.filter((c) => String(c.id) !== String(req.params.id));
   writeJson("catalog.json", catalog);
+  invalidateCatalogCache();
+  catalogCache = { at: Date.now(), data: catalog };
   res.json({ ok: true, catalog });
 });
 
@@ -933,7 +1305,7 @@ app.put("/api/admin/leaderboards", requireAdmin, (req, res) => {
 });
 
 app.get("/api/admin/payments", requireAdmin, (_req, res) => {
-  res.json({ ok: true, ...readJson("payments.json", { payments: [] }) });
+  res.json({ ok: true, ...readJson("payments.json", { payments: [] }), orders: listOrders(50) });
 });
 
 app.put("/api/admin/payments", requireAdmin, (req, res) => {
@@ -964,7 +1336,15 @@ app.delete("/api/admin/payments/:index", requireAdmin, (req, res) => {
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/")) return next();
   if (req.path.startsWith("/admin")) return next();
-  if (req.path.startsWith("/assets") || req.path === "/logo.png" || req.path === "/background.mp4" || req.path === "/weapon.glb") {
+  if (
+    req.path.startsWith("/assets") ||
+    req.path === "/logo.png" ||
+    req.path === "/background.mp4" ||
+    req.path === "/weapon.glb" ||
+    req.path === "/announcements.js" ||
+    req.path === "/role-claim.js" ||
+    req.path === "/maintenance.html"
+  ) {
     return next();
   }
 

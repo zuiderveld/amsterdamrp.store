@@ -1,3 +1,22 @@
 {
-  "packages": {}
+  "packages": {
+    "5": {
+      "enabled": false,
+      "roleIds": [],
+      "label": "test",
+      "updatedAt": "2026-07-30T18:20:00.076Z"
+    },
+    "1785435613676": {
+      "enabled": false,
+      "roleIds": [],
+      "label": "",
+      "updatedAt": "2026-07-30T18:20:13.683Z"
+    },
+    "vip": {
+      "enabled": false,
+      "roleIds": [],
+      "label": "Kill messages - VIP",
+      "updatedAt": "2026-07-30T18:36:18.239Z"
+    }
+  }
 }

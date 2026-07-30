@@ -16,9 +16,7 @@
           "totalPrice": 0,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 0,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525797,
@@ -30,9 +28,7 @@
           "totalPrice": 5,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 5,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525796,
@@ -44,9 +40,7 @@
           "totalPrice": 15,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 15,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525795,
@@ -58,9 +52,7 @@
           "totalPrice": 20,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 20,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525792,
@@ -72,9 +64,7 @@
           "totalPrice": 35,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 35,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525790,
@@ -86,9 +76,7 @@
           "totalPrice": 50,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 50,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525789,
@@ -100,9 +88,7 @@
           "totalPrice": 75,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 75,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525787,
@@ -114,9 +100,7 @@
           "totalPrice": 100,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 100,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525786,
@@ -128,9 +112,7 @@
           "totalPrice": 150,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 150,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525785,
@@ -142,9 +124,7 @@
           "totalPrice": 300,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 300,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
         },
         {
           "id": 7525784,
@@ -156,9 +136,17 @@
           "totalPrice": 600,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "tebexwrapperCoins": 600,
-          "deliversVia": "tebexwrapper"
+          "type": "single"
+        },
+        {
+          "id": 1785435613676,
+          "name": "Nieuw pakket",
+          "slug": "coins",
+          "description": "",
+          "image": "/assets/img/logo-t.png",
+          "totalPrice": 0,
+          "discount": 0,
+          "currency": "EUR"
         }
       ]
     },
@@ -178,10 +166,42 @@
           "totalPrice": 15,
           "discount": 0,
           "currency": "EUR",
-          "type": "single",
-          "deliversVia": "tebex"
+          "type": "single"
         }
       ]
+    },
+    {
+      "id": 1785435610319,
+      "name": "test",
+      "slug": "test",
+      "description": "",
+      "packages": []
+    },
+    {
+      "id": "ingame-killmessages",
+      "name": "killmessages",
+      "slug": "killmessages",
+      "categoryKey": "killmessages",
+      "description": "",
+      "packages": [
+        {
+          "id": "vip",
+          "name": "Kill messages - VIP",
+          "slug": "killmessages",
+          "description": "Iemand vermoord in de stad? Jouw custom tekst komt in iedereen zijn beeld die je vermoord. /killmessage om het te activeren!",
+          "image": "https://i.postimg.cc/tJZgq45C/vip.png",
+          "totalPrice": 15,
+          "discount": 0,
+          "currency": "COINS",
+          "ingameType": "item",
+          "amount": 1,
+          "syncIngame": true,
+          "source": "ingame",
+          "categoryKey": "killmessages",
+          "ingame": true
+        }
+      ],
+      "source": "ingame"
     }
   ]
 }

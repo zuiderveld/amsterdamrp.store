@@ -1,0 +1,50 @@
+{
+  "orders": [
+    {
+      "id": "ARP-MS7TEATK-3E12",
+      "status": "placed",
+      "provider": "native",
+      "createdAt": "2026-07-30T17:55:54.824Z",
+      "serverId": "2",
+      "coupon": null,
+      "discord": {
+        "id": "964232673939824691",
+        "username": "panda1012345678909"
+      },
+      "items": [
+        {
+          "id": 7542119,
+          "name": "00 - coins",
+          "quantity": 1,
+          "unitPrice": 0,
+          "total": 0
+        }
+      ],
+      "total": 0,
+      "currency": "EUR"
+    },
+    {
+      "id": "ARP-MS7SQZCP-4E32",
+      "status": "placed",
+      "provider": "native",
+      "createdAt": "2026-07-30T17:37:46.874Z",
+      "serverId": "2",
+      "coupon": null,
+      "discord": {
+        "id": "964232673939824691",
+        "username": "panda1012345678909"
+      },
+      "items": [
+        {
+          "id": 7542119,
+          "name": "00 - coins",
+          "quantity": 1,
+          "unitPrice": 0,
+          "total": 0
+        }
+      ],
+      "total": 0,
+      "currency": "EUR"
+    }
+  ]
+}

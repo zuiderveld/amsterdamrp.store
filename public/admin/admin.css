@@ -206,6 +206,57 @@ input, textarea, select {
 .list-item .meta { color: var(--muted); font-size: .8rem; }
 .list-item .price { color: var(--blue); font-weight: 700; }
 
+.cat-heading { margin-bottom: .75rem; }
+.cat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+.cat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.03);
+  color: var(--fg);
+  border-radius: .55rem;
+  padding: .55rem .9rem;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cat-btn:hover { background: rgba(255,255,255,.06); }
+.cat-btn.active {
+  border-color: rgba(59, 130, 246, .55);
+  background: rgba(37, 99, 235, .22);
+  color: #fff;
+}
+.cat-count {
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(0,0,0,.25);
+  border-radius: 999px;
+  padding: .1rem .45rem;
+}
+.cat-btn.active .cat-count { color: #bfdbfe; }
+
+.pkg-main {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
+}
+.pkg-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: .45rem;
+  object-fit: cover;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
 .announce-preview {
   background: #0b1424;
   border: 1px solid rgba(96, 165, 250, 0.25);
