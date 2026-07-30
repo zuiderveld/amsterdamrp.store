@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="nl" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin | Amsterdam Roleplay</title>
+  <link rel="icon" type="image/png" href="/assets/img/logo-t.png" />
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <div id="gate" class="gate">
+    <img src="/assets/img/logo-t.png" alt="" class="gate-logo" />
+    <h1>Admin Panel</h1>
+    <p>Alleen Discord-leden met de admin-role kunnen hierin.</p>
+    <p class="muted small">Role ID: <code>1521182074118082599</code></p>
+    <div class="row gap">
+      <a class="btn btn-discord" href="/api/auth/discord/login?return=/admin">Inloggen met Discord</a>
+      <a class="btn btn-ghost" href="/">Naar website</a>
+    </div>
+    <p id="gate-status" class="muted small"></p>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="/assets/img/logo-t.png" alt="" />
+        <div>
+          <strong>ARP Admin</strong>
+          <span id="admin-name">—</span>
+        </div>
+      </div>
+      <nav>
+        <button data-tab="overview" class="nav-btn active">Overzicht</button>
+        <button data-tab="mededelingen" class="nav-btn">Mededelingen</button>
+        <button data-tab="site" class="nav-btn">Site & onderhoud</button>
+        <button data-tab="server" class="nav-btn">Server status</button>
+        <button data-tab="shop" class="nav-btn">Webshop</button>
+        <button data-tab="roles" class="nav-btn">Discord rollen</button>
+        <button data-tab="leaderboards" class="nav-btn">Leaderboards</button>
+        <button data-tab="payments" class="nav-btn">Betalingen</button>
+        <button data-tab="links" class="nav-btn">Links</button>
+      </nav>
+      <div class="sidebar-foot">
+        <a href="/" class="btn btn-ghost btn-sm">Website</a>
+        <button id="logout" class="btn btn-ghost btn-sm">Uitloggen</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <h2 id="page-title">Overzicht</h2>
+        <div class="status-pill" id="live-pill">—</div>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section class="tab" id="tab-overview">
+        <div class="grid cards">
+          <div class="card">
+            <span class="label">Website</span>
+            <strong id="ov-site">—</strong>
+            <div class="btn-row">
+              <button class="btn btn-warn" data-action="maintenance-on">Onderhoud AAN</button>
+              <button class="btn btn-ok" data-action="publish">Openbaar zetten</button>
+            </div>
+          </div>
+          <div class="card">
+            <span class="label">Spelers online</span>
+            <strong id="ov-online">—</strong>
+            <div class="btn-row">
+              <button class="btn btn-ghost" data-action="online-plus">+10</button>
+              <button class="btn btn-ghost" data-action="online-minus">-10</button>
+              <button class="btn btn-ghost" data-action="online-full">Max vol</button>
+              <button class="btn btn-ghost" data-action="online-zero">0</button>
+            </div>
+          </div>
+          <div class="card">
+            <span class="label">Discord leden</span>
+            <strong id="ov-discord">—</strong>
+            <div class="btn-row">
+              <button class="btn btn-ghost" data-action="discord-plus">+100</button>
+              <button class="btn btn-ghost" data-action="discord-minus">-100</button>
+            </div>
+          </div>
+          <div class="card">
+            <span class="label">Shop pakketten</span>
+            <strong id="ov-packages">—</strong>
+            <div class="btn-row">
+              <button class="btn btn-primary" data-goto="shop">Beheer shop</button>
+            </div>
+          </div>
+        </div>
+        <div class="card mt">
+          <h3>Snelle acties</h3>
+          <div class="btn-row wrap">
+            <button class="btn btn-warn" data-action="maintenance-on">🔒 Onderhoudmodus</button>
+            <button class="btn btn-ok" data-action="publish">🌍 Site openbaar</button>
+            <button class="btn btn-ghost" data-goto="mededelingen">📣 Mededelingen</button>
+            <button class="btn btn-ghost" data-action="announce-clear">📣 Banner wissen</button>
+            <button class="btn btn-ghost" data-action="reload-all">🔄 Data herladen</button>
+            <a class="btn btn-ghost" href="/doneren" target="_blank">🛒 Shop bekijken</a>
+            <a class="btn btn-ghost" href="/leaderboards" target="_blank">🏆 Leaderboards</a>
+            <a class="btn btn-ghost" href="/camos" target="_blank">🔫 Wapen skins</a>
+            <a class="btn btn-ghost" href="/regels" target="_blank">📜 Regels</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- MEDEDELINGEN -->
+      <section class="tab hidden" id="tab-mededelingen">
+        <div class="card">
+          <h3>Mededeling op de website</h3>
+          <p class="muted small mb">Dit verschijnt als balk bovenaan de site (zoals “SERVER OPENING!”).</p>
+          <div id="announce-preview" class="announce-preview mb">Geen actieve mededeling</div>
+          <label class="check"><input type="checkbox" id="announce-on" /> Toon op website</label>
+          <label>Tekst</label>
+          <textarea id="announce-text" rows="3" placeholder="🎉 SERVER OPENING! | ONTVANG DIRECT INGAME ⚡ | 11K+ DISCORD LEDEN!"></textarea>
+          <div class="btn-row wrap mt">
+            <button class="btn btn-ok" data-action="announce-publish">📣 Publiceren op website</button>
+            <button class="btn btn-primary" data-action="save-announce">Opslaan</button>
+            <button class="btn btn-warn" data-action="announce-clear">Uitzetten / wissen</button>
+          </div>
+        </div>
+        <div class="card mt">
+          <h3>Snelle mededelingen</h3>
+          <p class="muted small mb">Klik om direct te plaatsen op de website.</p>
+          <div class="btn-row wrap">
+            <button class="btn btn-primary" data-action="preset-opening">🎉 Server opening</button>
+            <button class="btn btn-primary" data-action="preset-event">⚡ Weekend event</button>
+            <button class="btn btn-primary" data-action="preset-update">🛠️ Grote update</button>
+            <button class="btn btn-primary" data-action="preset-sale">💰 Shop sale</button>
+            <button class="btn btn-primary" data-action="preset-restart">🔄 Server restart</button>
+            <button class="btn btn-primary" data-action="preset-discord">💬 Join Discord</button>
+          </div>
+        </div>
+        <div class="card mt">
+          <h3>Geschiedenis</h3>
+          <div id="announce-history" class="muted small">Nog geen eerdere mededelingen.</div>
+        </div>
+      </section>
+
+      <!-- SITE -->
+      <section class="tab hidden" id="tab-site">
+        <div class="card">
+          <h3>Onderhoud & zichtbaarheid</h3>
+          <div class="btn-row wrap mb">
+            <button class="btn btn-warn" data-action="maintenance-on">Zet in onderhoud</button>
+            <button class="btn btn-ok" data-action="publish">Zet openbaar</button>
+          </div>
+          <label>Onderhoudsbericht</label>
+          <textarea id="maint-msg" rows="3"></textarea>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="save-maint-msg">Bericht opslaan</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SERVER -->
+      <section class="tab hidden" id="tab-server">
+        <div class="card">
+          <h3>Server status</h3>
+          <div class="form-grid">
+            <div>
+              <label>Servernaam</label>
+              <input id="srv-name" type="text" />
+            </div>
+            <div>
+              <label>Online</label>
+              <input id="srv-online" type="number" min="0" />
+            </div>
+            <div>
+              <label>Max spelers</label>
+              <input id="srv-max" type="number" min="1" />
+            </div>
+            <div>
+              <label>Online modus</label>
+              <select id="srv-mode">
+                <option value="live">Live (FiveM CFX)</option>
+                <option value="manual">Handmatig</option>
+                <option value="random">Random rondom waarde</option>
+              </select>
+            </div>
+            <div>
+              <label>Discord leden</label>
+              <input id="srv-discord" type="number" min="0" />
+            </div>
+            <div class="full">
+              <label>CFX join-code (live status)</label>
+              <input id="srv-cfx" type="text" placeholder="4zjlgq" />
+            </div>
+          </div>
+          <div class="btn-row wrap mt">
+            <button class="btn btn-primary" data-action="save-server">Opslaan</button>
+            <button class="btn btn-ok" data-action="refresh-live">🔄 Live status ophalen</button>
+            <button class="btn btn-ghost" data-action="online-plus">+10 online</button>
+            <button class="btn btn-ghost" data-action="online-minus">-10 online</button>
+            <button class="btn btn-ghost" data-action="online-full">Zet op max</button>
+            <button class="btn btn-ghost" data-action="online-zero">Zet op 0</button>
+            <button class="btn btn-ghost" data-action="discord-plus">+100 Discord</button>
+            <button class="btn btn-ghost" data-action="discord-minus">-100 Discord</button>
+          </div>
+          <p class="muted small mt" id="live-info">Live status: —</p>
+        </div>
+      </section>
+
+      <!-- SHOP -->
+      <section class="tab hidden" id="tab-shop">
+        <div class="card">
+          <h3>Categorie toevoegen</h3>
+          <div class="form-grid">
+            <div>
+              <label>Naam</label>
+              <input id="cat-name" type="text" placeholder="VIP Pakketten" />
+            </div>
+            <div>
+              <label>Beschrijving</label>
+              <input id="cat-desc" type="text" placeholder="Korte tekst" />
+            </div>
+          </div>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="add-category">Categorie maken</button>
+          </div>
+        </div>
+        <div class="card mt">
+          <h3>Pakket toevoegen / wijzigen</h3>
+          <div class="form-grid">
+            <div>
+              <label>Categorie</label>
+              <select id="pkg-cat"></select>
+            </div>
+            <div>
+              <label>Naam</label>
+              <input id="pkg-name" type="text" />
+            </div>
+            <div>
+              <label>Prijs (€)</label>
+              <input id="pkg-price" type="number" step="0.01" min="0" />
+            </div>
+            <div>
+              <label>Korting (€)</label>
+              <input id="pkg-discount" type="number" step="0.01" min="0" value="0" />
+            </div>
+            <div class="full">
+              <label>Beschrijving</label>
+              <input id="pkg-desc" type="text" />
+            </div>
+            <div class="full">
+              <label>Afbeelding URL</label>
+              <input id="pkg-image" type="text" value="/assets/img/logo-t.png" />
+            </div>
+          </div>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="add-package">Pakket opslaan</button>
+          </div>
+        </div>
+        <div id="shop-list" class="mt"></div>
+      </section>
+
+      <!-- DISCORD ROLES -->
+      <section class="tab hidden" id="tab-roles">
+        <div class="card">
+          <h3>Discord rollen bij aankoop</h3>
+          <p class="muted small">
+            Zet per Tebex-pakket een Discord role ID aan. Na betaling krijgt de ingelogde Discord-user automatisch die rol.
+            Instellingen worden ook gesynchroniseerd naar <code>tebexwrapper/data/web-role-grants.json</code>.
+          </p>
+          <p class="muted small" id="roles-status">Bot / guild: —</p>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="roles-reload">Vernieuwen</button>
+            <button class="btn btn-ghost" data-action="roles-sync">Sync naar tebexwrapper</button>
+          </div>
+        </div>
+        <div id="roles-list" class="mt"></div>
+      </section>
+
+      <!-- LEADERBOARDS -->
+      <section class="tab hidden" id="tab-leaderboards">
+        <div class="card">
+          <h3>Speler toevoegen</h3>
+          <div class="form-grid">
+            <div>
+              <label>Board</label>
+              <select id="lb-board">
+                <option value="coins">Coins</option>
+                <option value="spent">Uitgegeven</option>
+                <option value="spentWeekly">Deze week</option>
+              </select>
+            </div>
+            <div>
+              <label>Naam</label>
+              <input id="lb-name" type="text" />
+            </div>
+            <div>
+              <label>Waarde</label>
+              <input id="lb-value" type="number" min="0" />
+            </div>
+          </div>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="lb-add">Toevoegen</button>
+            <button class="btn btn-ghost" data-action="lb-sort">Sorteer hoog → laag</button>
+            <button class="btn btn-warn" data-action="lb-clear">Board legen</button>
+          </div>
+        </div>
+        <div id="lb-list" class="mt"></div>
+      </section>
+
+      <!-- PAYMENTS -->
+      <section class="tab hidden" id="tab-payments">
+        <div class="card">
+          <h3>Recente betaling toevoegen</h3>
+          <div class="form-grid">
+            <div>
+              <label>Spelernaam</label>
+              <input id="pay-name" type="text" />
+            </div>
+            <div>
+              <label>Pakket(ten)</label>
+              <input id="pay-pkg" type="text" placeholder="VIP Goud" />
+            </div>
+          </div>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="pay-add">Toevoegen</button>
+          </div>
+        </div>
+        <div id="pay-list" class="mt"></div>
+      </section>
+
+      <!-- LINKS -->
+      <section class="tab hidden" id="tab-links">
+        <div class="card">
+          <h3>Externe links</h3>
+          <div class="form-grid">
+            <div class="full">
+              <label>Discord invite</label>
+              <input id="link-discord" type="url" />
+            </div>
+            <div class="full">
+              <label>FiveM join (cfx.re)</label>
+              <input id="link-cfx" type="url" />
+            </div>
+            <div class="full">
+              <label>Discord Guild ID (voor role-check)</label>
+              <input id="link-guild" type="text" placeholder="Zet ook in .env als DISCORD_GUILD_ID" />
+            </div>
+          </div>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="save-links">Links opslaan</button>
+          </div>
+          <p class="muted small mt">Admin role ID (vast): <code>1521182074118082599</code></p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

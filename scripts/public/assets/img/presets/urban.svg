@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
+  <rect width="400" height="400" fill="#6b7280"/>
+  <g fill="#374151">
+    <rect x="0" y="0" width="50" height="50"/><rect x="100" y="0" width="50" height="50"/><rect x="200" y="0" width="50" height="50"/><rect x="300" y="0" width="50" height="50"/>
+    <rect x="50" y="50" width="50" height="50"/><rect x="150" y="50" width="50" height="50"/><rect x="250" y="50" width="50" height="50"/><rect x="350" y="50" width="50" height="50"/>
+    <rect x="0" y="100" width="50" height="50"/><rect x="100" y="100" width="50" height="50"/><rect x="200" y="100" width="50" height="50"/><rect x="300" y="100" width="50" height="50"/>
+    <rect x="50" y="150" width="50" height="50"/><rect x="150" y="150" width="50" height="50"/><rect x="250" y="150" width="50" height="50"/><rect x="350" y="150" width="50" height="50"/>
+    <rect x="0" y="200" width="50" height="50"/><rect x="100" y="200" width="50" height="50"/><rect x="200" y="200" width="50" height="50"/><rect x="300" y="200" width="50" height="50"/>
+    <rect x="50" y="250" width="50" height="50"/><rect x="150" y="250" width="50" height="50"/><rect x="250" y="250" width="50" height="50"/><rect x="350" y="250" width="50" height="50"/>
+    <rect x="0" y="300" width="50" height="50"/><rect x="100" y="300" width="50" height="50"/><rect x="200" y="300" width="50" height="50"/><rect x="300" y="300" width="50" height="50"/>
+    <rect x="50" y="350" width="50" height="50"/><rect x="150" y="350" width="50" height="50"/><rect x="250" y="350" width="50" height="50"/><rect x="350" y="350" width="50" height="50"/>
+  </g>
+  <g fill="#9ca3af" opacity="0.5">
+    <rect x="25" y="25" width="25" height="25"/><rect x="175" y="75" width="25" height="25"/><rect x="325" y="125" width="25" height="25"/><rect x="75" y="225" width="25" height="25"/><rect x="275" y="325" width="25" height="25"/>
+  </g>
+</svg>

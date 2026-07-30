@@ -4,6 +4,7 @@ const titles = {
   site: "Site & onderhoud",
   server: "Server status",
   shop: "Webshop",
+  roles: "Discord rollen",
   leaderboards: "Leaderboards",
   payments: "Betalingen",
   links: "Links",
@@ -20,8 +21,12 @@ const PRESETS = {
 
 let settings = null;
 let catalog = null;
+let catalogSource = "—";
+let rolePackages = [];
+let roleMeta = { botConfigured: false, guildId: null };
 let leaderboards = null;
 let payments = [];
+let durableStore = false;
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -54,6 +59,20 @@ function setTab(name) {
 function fillForms() {
   if (!settings) return;
   $("#maint-msg").value = settings.maintenanceMessage || "";
+  const durableHint = $("#durable-hint");
+  if (durableHint) {
+    durableHint.textContent = durableStore
+      ? "Instellingen worden duurzaam opgeslagen (Upstash)."
+      : "Let op: op Vercel zonder Upstash verdwijnen onderhoud/mededelingen na een cold start. Zet UPSTASH_REDIS_REST_URL + TOKEN.";
+  }
+  const maintHint = $("#maint-hint");
+  if (maintHint && settings.maintenance) {
+    maintHint.innerHTML =
+      "<strong>Onderhoud staat AAN.</strong> Jij ziet de site nog als admin. Test in <strong>incognito</strong> (uitgelogd).";
+  } else if (maintHint) {
+    maintHint.innerHTML =
+      "Admins zien de website altijd. Test onderhoud in een <strong>incognito-venster</strong> (uitgelogd).";
+  }
   $("#announce-on").checked = !!settings.announcementEnabled;
   $("#announce-text").value = settings.announcement || "";
   updateAnnouncePreview();
@@ -83,6 +102,8 @@ function fillForms() {
 
   const pkgCount = (catalog?.categories || []).reduce((n, c) => n + (c.packages?.length || 0), 0);
   $("#ov-packages").textContent = String(pkgCount);
+  const shopSource = $("#shop-source");
+  if (shopSource) shopSource.textContent = `Bron: ${catalogSource} · ${pkgCount} pakketten`;
 }
 
 function renderShop() {
@@ -119,6 +140,55 @@ function renderShop() {
     }
     list.appendChild(box);
   }
+}
+
+function renderRoles() {
+  const list = $("#roles-list");
+  const status = $("#roles-status");
+  if (!list) return;
+  list.innerHTML = "";
+  if (status) {
+    status.textContent = `Bot: ${roleMeta.botConfigured ? "OK" : "ontbreekt"} · Guild: ${roleMeta.guildId || "onbekend"} · ${rolePackages.length} pakketten`;
+  }
+  if (!rolePackages.length) {
+    list.innerHTML = `<div class="card"><p class="muted">Geen pakketten. Zet TEBEX_SECRET in Vercel Variables en klik Vernieuwen.</p></div>`;
+    return;
+  }
+  const byCat = new Map();
+  for (const pkg of rolePackages) {
+    const key = pkg.category || "Overig";
+    if (!byCat.has(key)) byCat.set(key, []);
+    byCat.get(key).push(pkg);
+  }
+  for (const [catName, pkgs] of byCat) {
+    const box = document.createElement("div");
+    box.className = "list-card";
+    box.innerHTML = `<header><strong>${escapeHtml(catName)}</strong><span class="meta">${pkgs.length} pakketten</span></header>`;
+    for (const pkg of pkgs) {
+      const row = document.createElement("div");
+      row.className = "list-item role-row";
+      row.innerHTML = `
+        <div class="role-info">
+          <strong>${escapeHtml(pkg.name)}</strong>
+          <div class="meta">Tebex ID ${escapeHtml(String(pkg.id))} · €${Number(pkg.price || 0).toFixed(2)}</div>
+        </div>
+        <div class="role-controls">
+          <label class="switch"><input type="checkbox" data-role-enabled="${pkg.id}" ${pkg.enabled ? "checked" : ""} /><span>Aan</span></label>
+          <input type="text" data-role-ids="${pkg.id}" value="${escapeHtml((pkg.roleIds || []).join(", "))}" placeholder="Discord role ID(s)" />
+          <button class="btn btn-primary btn-sm" data-save-role="${pkg.id}">Opslaan</button>
+        </div>`;
+      box.appendChild(row);
+    }
+    list.appendChild(box);
+  }
+}
+
+async function loadRoleGrants() {
+  const res = await api("/api/admin/role-grants");
+  rolePackages = res.packages || [];
+  roleMeta = { botConfigured: Boolean(res.botConfigured), guildId: res.guildId || null };
+  renderRoles();
+  return res;
 }
 
 function renderLeaderboards() {
@@ -211,7 +281,19 @@ async function publishAnnouncement(text, enabled = true) {
     announcement: text,
     announcementEnabled: enabled,
   });
-  toast(enabled ? "Mededeling live op de website" : "Mededeling uitgezet");
+  try {
+    if (enabled && text) {
+      localStorage.setItem(
+        "arp_announcement_v1",
+        JSON.stringify({ enabled: true, text, updatedAt: new Date().toISOString() })
+      );
+    } else {
+      localStorage.removeItem("arp_announcement_v1");
+    }
+  } catch {
+    /* ignore */
+  }
+  toast(enabled ? "Mededeling live — blijft staan na refresh" : "Mededeling uitgezet");
 }
 
 async function reloadAll() {
@@ -222,13 +304,20 @@ async function reloadAll() {
     api("/api/admin/payments"),
   ]);
   settings = s.settings;
+  durableStore = Boolean(s.durableStore);
   catalog = c.catalog;
+  catalogSource = c.source || "onbekend";
   leaderboards = l.leaderboards;
   payments = p.payments || [];
   fillForms();
   renderShop();
   renderLeaderboards();
   renderPayments();
+  try {
+    await loadRoleGrants();
+  } catch {
+    /* optional */
+  }
 }
 
 async function saveSettings(patch) {
@@ -243,19 +332,35 @@ async function saveSettings(patch) {
 async function handleAction(action) {
   try {
     switch (action) {
-      case "maintenance-on":
-        await api("/api/admin/maintenance", {
+      case "maintenance-on": {
+        const res = await api("/api/admin/maintenance", {
           method: "POST",
           body: JSON.stringify({ enabled: true, message: $("#maint-msg").value }),
         });
         await reloadAll();
-        toast("Onderhoudmodus AAN");
+        toast(res.note || "Onderhoudmodus AAN — test in incognito");
         break;
-      case "publish":
+      }
+      case "publish": {
         await api("/api/admin/publish", { method: "POST", body: "{}" });
         await reloadAll();
         toast("Website openbaar");
         break;
+      }
+      case "shop-refresh":
+        await reloadAll();
+        toast(`Catalogus: ${catalogSource} (${(catalog?.categories || []).reduce((n, c) => n + (c.packages?.length || 0), 0)} pakketten)`);
+        break;
+      case "roles-reload":
+        await loadRoleGrants();
+        toast("Rollen vernieuwd");
+        break;
+      case "roles-sync": {
+        const res = await api("/api/admin/role-grants");
+        const sync = res.wrapperSync;
+        toast(sync?.ok ? `Gesynchroniseerd (${sync.count})` : `Sync: ${sync?.reason || "mislukt"}`);
+        break;
+      }
       case "save-maint-msg":
         await saveSettings({ maintenanceMessage: $("#maint-msg").value });
         break;
@@ -482,6 +587,21 @@ document.addEventListener("click", async (e) => {
   if (delPay) {
     await api(`/api/admin/payments/${delPay.dataset.delPay}`, { method: "DELETE" });
     await reloadAll();
+    return;
+  }
+
+  const saveRole = e.target.closest("[data-save-role]");
+  if (saveRole) {
+    const id = saveRole.dataset.saveRole;
+    const enabled = document.querySelector(`[data-role-enabled="${id}"]`)?.checked;
+    const roleIds = document.querySelector(`[data-role-ids="${id}"]`)?.value || "";
+    const pkg = rolePackages.find((p) => String(p.id) === String(id));
+    await api(`/api/admin/role-grants/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled: Boolean(enabled), roleIds, label: pkg?.name || "" }),
+    });
+    await loadRoleGrants();
+    return toast(enabled ? "Rol-koppeling opgeslagen" : "Rol-koppeling uitgezet");
   }
 
   const reuse = e.target.closest("[data-reuse-announce]");

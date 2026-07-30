@@ -7,19 +7,26 @@
     { "name": "RookieNL", "value": 76220 },
     { "name": "PixelPilot", "value": 54110 },
     { "name": "NightRider", "value": 38890 },
-    { "name": "CityRunner", "value": 22140 }
+    { "name": "CityRunner", "value": 22140 },
+    { "name": "Ghost.9", "value": 18400 },
+    { "name": "Q05Q", "value": 15220 }
   ],
   "spent": [
-    { "name": "AmsterdamOG", "value": 92000 },
-    { "name": "NovaKing", "value": 87500 },
-    { "name": "DutchShadow", "value": 64000 },
-    { "name": "BlueViper", "value": 41000 },
-    { "name": "PixelPilot", "value": 28500 }
+    { "name": "Q05Q", "value": 624.98 },
+    { "name": "Ghost.9", "value": 99.99 },
+    { "name": "Zevhetneusje", "value": 87.50 },
+    { "name": "AmsterdamOG", "value": 87.50 },
+    { "name": "NovaKing", "value": 64.99 },
+    { "name": "DutchShadow", "value": 49.99 },
+    { "name": "BlueViper", "value": 34.99 },
+    { "name": "PixelPilot", "value": 24.99 },
+    { "name": "RookieNL", "value": 19.99 },
+    { "name": "NightRider", "value": 14.99 }
   ],
   "spentWeekly": [
-    { "name": "BlueViper", "value": 12500 },
-    { "name": "NovaKing", "value": 9800 },
-    { "name": "RookieNL", "value": 7200 },
-    { "name": "NightRider", "value": 4100 }
+    { "name": "Q05Q", "value": 124.98 },
+    { "name": "Ghost.9", "value": 49.99 },
+    { "name": "BlueViper", "value": 29.99 },
+    { "name": "RookieNL", "value": 19.99 }
   ]
 }

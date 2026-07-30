@@ -34,17 +34,24 @@ In het admin panel kun je o.a.:
 - Leaderboards & recente betalingen beheren
 - Discord/FiveM links wijzigen
 
+## Tebex + tebexwrapper
+
+Checkout gebruikt dezelfde Tebex-winkel als de FiveM-resource `tebexwrapper`.
+
+1. Zet `TEBEX_SECRET` (= `sv_tebexSecret` in `server.cfg`) in `.env` of Vercel. Lokaal wordt `server.cfg` automatisch gelezen als die env ontbreekt.
+2. Optioneel: `TEBEX_PUBLIC_TOKEN` (Tebex Headless) voor basket-API checkout. Zonder token valt de site terug op de Tebex storefront-URL.
+3. In Tebex → pakketcommands: `matrixwrapper:sendProduct {id} {packageId} {price} {transaction}` zodat `tebexwrapper` coins/rewards in-game uitkeert (`Config.Redeem`).
+
+Status: `GET /api/store/status`
+
 ## Wat werkt
 
 - Home, doneren/webshop UI, wapen skins, leaderboards, regels, privacy & voorwaarden
-- Server status, catalogus, recente betalingen en leaderboards
+- Live Tebex-catalogus, recente betalingen en checkout (Discord-login vereist)
+- Koppeling met lokale `tebexwrapper` redeem-map
 - Winkelwagen (localStorage)
 - Admin panel + onderhoudsmodus
 
-## Wat niet werkt
-
-- Tebex-checkout (echte betalingen) — bewust uitgeschakeld in deze clone
-
 ## Disclaimer
 
-Dit project is uitsluitend bedoeld voor leer-/ontwikkeldoeleinden. Merken, logo’s en content blijven eigendom van Groningen Roleplay.
+Amsterdam Roleplay webshop — frontend gebaseerd op een eerdere store-clone.

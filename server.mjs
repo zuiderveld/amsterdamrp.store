@@ -5,23 +5,76 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import {
+  packagesToCatalog,
+  paymentsToRecent,
+  fetchTebexPackages,
+  fetchTebexPayments,
+  createCheckout,
+  completeCheckout,
+  getTebexSecret,
+  getTebexPublicToken,
+} from "./lib/tebex.mjs";
+import {
+  getTebexwrapperPath,
+  readRedeemPackages,
+  annotateCatalogWithRedeem,
+} from "./lib/tebexwrapper.mjs";
+import {
+  readRoleGrants,
+  writeRoleGrants,
+  upsertPackageRoleGrant,
+  syncRoleGrantsToTebexwrapper,
+  grantDiscordRoles,
+  roleIdsForPackages,
+  markRolesClaimed,
+  alreadyClaimed,
+  getDiscordBotToken,
+  getDiscordGuildIdForRoles,
+} from "./lib/discord-roles.mjs";
+
+import {
+  hasDurableSettingsStore,
+  loadSettingsAsync,
+  saveSettingsAsync,
+  readSettingsFile,
+  seedCatalogFallback,
+} from "./lib/persist.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SEED_DATA = path.join(__dirname, "data");
 const DATA =
   process.env.VERCEL === "1"
     ? path.join("/tmp", "amsterdamrp-data")
-    : path.join(__dirname, "data");
+    : SEED_DATA;
 
 // Seed /tmp data from repo on cold start (Vercel filesystem is ephemeral)
 function ensureDataFiles() {
   if (process.env.VERCEL !== "1") return;
-  const seedDir = path.join(__dirname, "data");
   fs.mkdirSync(DATA, { recursive: true });
-  for (const file of ["settings.json", "catalog.json", "leaderboards.json", "payments.json"]) {
+  for (const file of [
+    "settings.json",
+    "catalog.json",
+    "leaderboards.json",
+    "payments.json",
+    "role-grants.json",
+    "announcement.json",
+  ]) {
     const dest = path.join(DATA, file);
-    const src = path.join(seedDir, file);
-    if (!fs.existsSync(dest) && fs.existsSync(src)) {
+    const src = path.join(SEED_DATA, file);
+    if (!fs.existsSync(src)) continue;
+    if (!fs.existsSync(dest)) {
       fs.copyFileSync(src, dest);
+      continue;
+    }
+    // Re-seed empty catalog so admin/shop never stay blank after a bad /tmp write
+    if (file === "catalog.json") {
+      try {
+        const cur = JSON.parse(fs.readFileSync(dest, "utf8"));
+        if (!cur?.categories?.length) fs.copyFileSync(src, dest);
+      } catch {
+        fs.copyFileSync(src, dest);
+      }
     }
   }
 }
@@ -42,7 +95,12 @@ function readJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(p, "utf8"));
   } catch {
-    return structuredClone(fallback);
+    // Fall back to repo seed (important on Vercel when /tmp is empty/corrupt)
+    try {
+      return JSON.parse(fs.readFileSync(path.join(SEED_DATA, file), "utf8"));
+    } catch {
+      return structuredClone(fallback);
+    }
   }
 }
 
@@ -51,21 +109,22 @@ function writeJson(file, data) {
   fs.writeFileSync(path.join(DATA, file), JSON.stringify(data, null, 2), "utf8");
 }
 
-function getSettings() {
-  const s = readJson("settings.json", {
-    maintenance: false,
-    maintenanceMessage: "We zijn even bezig met onderhoud. Kom zo terug!",
-    sitePublic: true,
-    announcement: "",
-    announcementEnabled: false,
-    server: { name: "Amsterdam Roleplay", online: 0, max: 512, onlineMode: "live" },
-    discordMembers: 0,
-    discordInvite: "https://discord.gg/rRSeCBb25A",
-    cfxJoin: "https://cfx.re/join/4zjlgq",
-    cfxCode: "4zjlgq",
-    adminRoleId: ADMIN_ROLE_ID,
-    guildId: DISCORD_GUILD_ID,
-  });
+const defaultSettings = () => ({
+  maintenance: false,
+  maintenanceMessage: "We zijn even bezig met onderhoud. Kom zo terug!",
+  sitePublic: true,
+  announcement: "",
+  announcementEnabled: false,
+  server: { name: "Amsterdam Roleplay", online: 0, max: 512, onlineMode: "live" },
+  discordMembers: 0,
+  discordInvite: "https://discord.gg/rRSeCBb25A",
+  cfxJoin: "https://cfx.re/join/pga9aey",
+  cfxCode: "pga9aey",
+  adminRoleId: ADMIN_ROLE_ID,
+  guildId: DISCORD_GUILD_ID,
+});
+
+function normalizeSettings(s) {
   s.adminRoleId = ADMIN_ROLE_ID;
   if (DISCORD_GUILD_ID) s.guildId = DISCORD_GUILD_ID;
   if (!s.cfxCode && s.cfxJoin) {
@@ -73,6 +132,47 @@ function getSettings() {
     if (m) s.cfxCode = m[1];
   }
   return s;
+}
+
+function getSettings() {
+  return normalizeSettings(readSettingsFile(DATA, SEED_DATA, defaultSettings()));
+}
+
+async function getSettingsAsync() {
+  return normalizeSettings(await loadSettingsAsync(DATA, SEED_DATA, defaultSettings()));
+}
+
+async function persistSettings(next) {
+  const normalized = normalizeSettings(next);
+  return saveSettingsAsync(DATA, normalized);
+}
+
+let catalogCache = { at: 0, data: null };
+
+async function getLiveCatalog() {
+  const redeem = readRedeemPackages();
+  if (catalogCache.data && Date.now() - catalogCache.at < 60_000) {
+    return annotateCatalogWithRedeem(catalogCache.data, redeem);
+  }
+  try {
+    if (getTebexSecret()) {
+      const packages = await fetchTebexPackages();
+      const catalog = packagesToCatalog(packages);
+      if (catalog.categories.length) {
+        catalogCache = { at: Date.now(), data: catalog };
+        try {
+          writeJson("catalog.json", catalog);
+        } catch {
+          /* ignore */
+        }
+        return annotateCatalogWithRedeem(catalog, redeem);
+      }
+    }
+  } catch (err) {
+    console.error("Tebex catalog error:", err.message);
+  }
+  const fallback = seedCatalogFallback(DATA, SEED_DATA);
+  return annotateCatalogWithRedeem(fallback, redeem);
 }
 
 /** Live caches (refreshed in background) */
@@ -372,11 +472,19 @@ app.get("/api/admin/live-status", requireAdmin, async (_req, res) => {
   res.json({ ok: true, server: live.server, discord: live.discord });
 });
 
-app.get("/api/store/catalog", (_req, res) => {
-  res.json(readJson("catalog.json", { categories: [] }));
+app.get("/api/store/catalog", async (_req, res) => {
+  res.json(await getLiveCatalog());
 });
 
-app.get("/api/store/recent-payments", (_req, res) => {
+app.get("/api/store/recent-payments", async (_req, res) => {
+  try {
+    if (getTebexSecret()) {
+      const payments = await fetchTebexPayments(25);
+      return res.json(paymentsToRecent(payments));
+    }
+  } catch (err) {
+    console.error("Tebex payments error:", err.message);
+  }
   res.json(readJson("payments.json", { payments: [] }));
 });
 
@@ -384,8 +492,8 @@ app.get("/api/leaderboards", (_req, res) => {
   res.json(readJson("leaderboards.json", { coins: [], spent: [], spentWeekly: [] }));
 });
 
-app.get("/api/site/public-config", (_req, res) => {
-  const s = getSettings();
+app.get("/api/site/public-config", async (_req, res) => {
+  const s = await getSettingsAsync();
   res.json({
     maintenance: s.maintenance,
     maintenanceMessage: s.maintenanceMessage,
@@ -396,12 +504,179 @@ app.get("/api/site/public-config", (_req, res) => {
   });
 });
 
-app.post("/api/store/checkout", (_req, res) => {
-  res.status(501).json({ ok: false, reason: "Checkout is uitgeschakeld in deze clone." });
+app.get("/api/server/verify", (req, res) => {
+  const id = String(req.query.id || "").trim();
+  if (!id || id.length > 64 || !/^[a-zA-Z0-9:_-]+$/.test(id)) {
+    return res.json({ ok: false, online: false, reason: "bad_server_id" });
+  }
+  res.json({ ok: true, online: true, serverId: id });
 });
 
-app.post("/api/store/checkout/complete", (_req, res) => {
-  res.status(501).json({ ok: false });
+app.get("/api/store/status", (_req, res) => {
+  const redeem = readRedeemPackages();
+  const wrapperPath = getTebexwrapperPath();
+  res.json({
+    ok: true,
+    tebexSecret: Boolean(getTebexSecret()),
+    tebexPublicToken: Boolean(getTebexPublicToken()),
+    checkoutMode: getTebexPublicToken() ? "headless" : getTebexSecret() ? "storefront" : "disabled",
+    tebexwrapperLinked: Boolean(wrapperPath),
+    tebexwrapperPath: wrapperPath || null,
+    redeemPackageIds: Object.keys(redeem.packages).map(Number),
+    deliveryCommand: "matrixwrapper:sendProduct {id} {packageId} {price} {transaction}",
+  });
+});
+
+app.post("/api/store/checkout", async (req, res) => {
+  try {
+    if (!req.session?.user) {
+      return res.json({ ok: false, reason: "not_logged_in" });
+    }
+    const { items, serverId, coupon } = req.body || {};
+    const base = getPublicUrl(req);
+    const result = await createCheckout({
+      items,
+      serverId,
+      coupon,
+      completeUrl: `${base}/doneren/cart?paid=1`,
+      cancelUrl: `${base}/doneren/cart`,
+    });
+    if (result.ok) {
+      if (result.ident) req.session.basketIdent = result.ident;
+      const packageIds = (items || [])
+        .map((i) => Number(i.id))
+        .filter((id) => id > 0);
+      req.session.pendingRoleClaim = {
+        packageIds,
+        serverId: String(serverId || ""),
+        discordId: String(req.session.user.id),
+        at: Date.now(),
+        ident: result.ident || null,
+      };
+    }
+    return res.json(result);
+  } catch (err) {
+    console.error("Checkout error:", err);
+    return res.json({ ok: false, reason: "tebex_error", detail: err.message });
+  }
+});
+
+app.post("/api/store/claim-roles", async (req, res) => {
+  try {
+    const user = req.session?.user;
+    if (!user?.id) {
+      return res.json({ ok: false, reason: "not_logged_in" });
+    }
+
+    const pending = req.session.pendingRoleClaim;
+    const bodyIds = Array.isArray(req.body?.packageIds) ? req.body.packageIds : [];
+    const packageIds = (pending?.packageIds?.length ? pending.packageIds : bodyIds)
+      .map((id) => Number(id))
+      .filter((id) => id > 0);
+
+    if (!packageIds.length) {
+      return res.json({ ok: false, reason: "nothing_to_claim" });
+    }
+
+    // Pending claims expire after 6 hours
+    if (pending?.at && Date.now() - pending.at > 6 * 60 * 60 * 1000) {
+      delete req.session.pendingRoleClaim;
+      return res.json({ ok: false, reason: "claim_expired" });
+    }
+
+    const { roleIds, matchedPackages } = roleIdsForPackages(packageIds);
+    if (!roleIds.length) {
+      return res.json({ ok: false, reason: "no_roles_configured", matchedPackages });
+    }
+
+    const transactionKey = [
+      user.id,
+      pending?.ident || pending?.serverId || "manual",
+      matchedPackages.slice().sort().join("-"),
+    ].join(":");
+
+    if (alreadyClaimed(transactionKey)) {
+      return res.json({ ok: true, alreadyClaimed: true, granted: [], matchedPackages });
+    }
+
+    // Prefer verifying against recent Tebex payments for this username
+    let verified = !getTebexSecret();
+    if (getTebexSecret() && pending?.serverId) {
+      try {
+        const payments = await fetchTebexPayments(40);
+        const list = Array.isArray(payments) ? payments : payments?.data || [];
+        const username = String(pending.serverId).toLowerCase();
+        verified = list.some((p) => {
+          const player = String(p.player?.name || "").toLowerCase();
+          if (player !== username) return false;
+          const paidPackages = (p.packages || []).map((x) => Number(x.id || x));
+          return matchedPackages.some((id) => paidPackages.includes(Number(id)));
+        });
+      } catch (err) {
+        console.error("claim-roles payment verify:", err.message);
+        // Allow claim shortly after checkout redirect if verify fails
+        verified = Boolean(pending?.at && Date.now() - pending.at < 30 * 60 * 1000);
+      }
+    } else if (pending?.at && Date.now() - pending.at < 30 * 60 * 1000) {
+      verified = true;
+    }
+
+    if (!verified) {
+      return res.json({
+        ok: false,
+        reason: "payment_not_found",
+        detail: "Geen passende Tebex-betaling gevonden. Probeer het over een minuut opnieuw.",
+      });
+    }
+
+    const grant = await grantDiscordRoles({
+      userId: user.id,
+      roleIds,
+      reason: `Webshop pakket ${matchedPackages.join(",")}`,
+      guildId: getDiscordGuildIdForRoles(getSettings().guildId),
+    });
+
+    if (grant.ok) {
+      markRolesClaimed({
+        transactionKey,
+        discordId: user.id,
+        packageIds: matchedPackages,
+        granted: grant.granted,
+        serverId: pending?.serverId || null,
+      });
+      delete req.session.pendingRoleClaim;
+    }
+
+    return res.json({
+      ok: grant.ok,
+      granted: grant.granted || [],
+      matchedPackages,
+      reason: grant.reason,
+      errors: grant.errors || [],
+    });
+  } catch (err) {
+    console.error("claim-roles error:", err);
+    return res.json({ ok: false, reason: "claim_error", detail: err.message });
+  }
+});
+
+app.post("/api/store/checkout/complete", async (req, res) => {
+  try {
+    if (!req.session?.user) {
+      return res.json({ ok: false, reason: "not_logged_in" });
+    }
+    const { ident, items, coupon } = req.body || {};
+    const basketIdent = ident || req.session.basketIdent;
+    const result = await completeCheckout({
+      ident: basketIdent,
+      items,
+      coupon,
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error("Checkout complete error:", err);
+    return res.json({ ok: false, reason: "tebex_error", detail: err.message });
+  }
 });
 
 app.get("/api/skins", (_req, res) => {
@@ -433,16 +708,19 @@ app.get("/api/admin/me", (req, res) => {
   });
 });
 
-app.get("/api/admin/settings", requireAdmin, (_req, res) => {
-  res.json({ ok: true, settings: getSettings() });
+app.get("/api/admin/settings", requireAdmin, async (_req, res) => {
+  res.json({
+    ok: true,
+    settings: await getSettingsAsync(),
+    durableStore: hasDurableSettingsStore(),
+  });
 });
 
-app.put("/api/admin/settings", requireAdmin, (req, res) => {
-  const current = getSettings();
+app.put("/api/admin/settings", requireAdmin, async (req, res) => {
+  const current = await getSettingsAsync();
   const next = { ...current, ...req.body, adminRoleId: ADMIN_ROLE_ID };
   if (req.body.server) next.server = { ...current.server, ...req.body.server };
 
-  // Keep mededeling history when publishing a new one
   if (
     typeof req.body.announcement === "string" &&
     req.body.announcement.trim() &&
@@ -455,12 +733,46 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
   }
   if (!Array.isArray(next.announcementHistory)) next.announcementHistory = current.announcementHistory || [];
 
-  writeJson("settings.json", next);
-  res.json({ ok: true, settings: next });
+  if (typeof next.announcement === "string") {
+    next.announcementUpdatedAt = new Date().toISOString();
+  }
+  if (next.announcementEnabled && next.announcement) {
+    next.announcement = String(next.announcement).trim();
+  }
+
+  const saved = await persistSettings(next);
+  // Also keep a dedicated announcement snapshot for cold-start fallbacks
+  try {
+    writeJson("announcement.json", {
+      enabled: Boolean(next.announcementEnabled && next.announcement),
+      text: next.announcementEnabled ? next.announcement || "" : "",
+      updatedAt: next.announcementUpdatedAt || null,
+    });
+  } catch {
+    /* ignore */
+  }
+  res.json({ ok: true, settings: next, durable: saved.durable });
 });
 
-app.get("/api/announcements", (_req, res) => {
-  const s = getSettings();
+app.get("/api/announcements", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  let s = await getSettingsAsync();
+  // Fallback snapshot if settings lost announcement on ephemeral disk
+  if (!(s.announcementEnabled && s.announcement)) {
+    try {
+      const snap = readJson("announcement.json", null);
+      if (snap?.enabled && snap?.text) {
+        s = {
+          ...s,
+          announcementEnabled: true,
+          announcement: snap.text,
+          announcementUpdatedAt: snap.updatedAt || null,
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   res.json({
     enabled: Boolean(s.announcementEnabled && s.announcement),
     text: s.announcementEnabled ? s.announcement || "" : "",
@@ -468,25 +780,85 @@ app.get("/api/announcements", (_req, res) => {
   });
 });
 
-app.post("/api/admin/maintenance", requireAdmin, (req, res) => {
-  const s = getSettings();
+app.post("/api/admin/maintenance", requireAdmin, async (req, res) => {
+  const s = await getSettingsAsync();
   s.maintenance = Boolean(req.body.enabled);
   if (typeof req.body.message === "string") s.maintenanceMessage = req.body.message;
   s.sitePublic = !s.maintenance;
-  writeJson("settings.json", s);
-  res.json({ ok: true, settings: s });
+  const saved = await persistSettings(s);
+  res.json({
+    ok: true,
+    settings: s,
+    durable: saved.durable,
+    note: s.maintenance
+      ? "Onderhoud staat AAN. Admins zien de site nog wel — test in een incognito-venster."
+      : "Site is openbaar.",
+  });
 });
 
-app.post("/api/admin/publish", requireAdmin, (req, res) => {
-  const s = getSettings();
+app.post("/api/admin/publish", requireAdmin, async (_req, res) => {
+  const s = await getSettingsAsync();
   s.maintenance = false;
   s.sitePublic = true;
-  writeJson("settings.json", s);
-  res.json({ ok: true, settings: s });
+  const saved = await persistSettings(s);
+  res.json({ ok: true, settings: s, durable: saved.durable });
 });
 
-app.get("/api/admin/catalog", requireAdmin, (_req, res) => {
-  res.json({ ok: true, catalog: readJson("catalog.json", { categories: [] }) });
+app.get("/api/admin/role-grants", requireAdmin, async (_req, res) => {
+  const grants = readRoleGrants();
+  const catalog = await getLiveCatalog();
+
+  const packages = [];
+  for (const cat of catalog.categories || []) {
+    for (const pkg of cat.packages || []) {
+      const cfg = grants.packages?.[String(pkg.id)] || {
+        enabled: false,
+        roleIds: [],
+        label: pkg.name,
+      };
+      packages.push({
+        id: pkg.id,
+        name: pkg.name,
+        price: pkg.totalPrice,
+        category: cat.name,
+        enabled: Boolean(cfg.enabled),
+        roleIds: cfg.roleIds || [],
+        label: cfg.label || pkg.name,
+      });
+    }
+  }
+  res.json({
+    ok: true,
+    grants,
+    packages,
+    botConfigured: Boolean(getDiscordBotToken()),
+    guildId: getDiscordGuildIdForRoles(getSettings().guildId) || null,
+    wrapperSync: syncRoleGrantsToTebexwrapper(grants),
+  });
+});
+
+app.put("/api/admin/role-grants", requireAdmin, (req, res) => {
+  const next = writeRoleGrants(req.body.grants || req.body);
+  res.json({ ok: true, grants: next, wrapperSync: syncRoleGrantsToTebexwrapper(next) });
+});
+
+app.put("/api/admin/role-grants/:packageId", requireAdmin, (req, res) => {
+  const next = upsertPackageRoleGrant(req.params.packageId, req.body || {});
+  res.json({
+    ok: true,
+    grants: next,
+    package: next.packages[String(req.params.packageId)] || null,
+    wrapperSync: syncRoleGrantsToTebexwrapper(next),
+  });
+});
+
+app.get("/api/admin/catalog", requireAdmin, async (_req, res) => {
+  const catalog = await getLiveCatalog();
+  res.json({
+    ok: true,
+    catalog,
+    source: getTebexSecret() ? "tebex" : "seed",
+  });
 });
 
 app.put("/api/admin/catalog", requireAdmin, (req, res) => {

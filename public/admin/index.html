@@ -35,6 +35,7 @@
         <button data-tab="site" class="nav-btn">Site & onderhoud</button>
         <button data-tab="server" class="nav-btn">Server status</button>
         <button data-tab="shop" class="nav-btn">Webshop</button>
+        <button data-tab="roles" class="nav-btn">Discord rollen</button>
         <button data-tab="leaderboards" class="nav-btn">Leaderboards</button>
         <button data-tab="payments" class="nav-btn">Betalingen</button>
         <button data-tab="links" class="nav-btn">Links</button>
@@ -141,9 +142,14 @@
       <section class="tab hidden" id="tab-site">
         <div class="card">
           <h3>Onderhoud & zichtbaarheid</h3>
+          <p class="muted small" id="maint-hint">
+            Admins zien de website altijd. Test onderhoud in een <strong>incognito-venster</strong> (uitgelogd).
+          </p>
+          <p class="muted small" id="durable-hint"></p>
           <div class="btn-row wrap mb">
             <button class="btn btn-warn" data-action="maintenance-on">Zet in onderhoud</button>
             <button class="btn btn-ok" data-action="publish">Zet openbaar</button>
+            <a class="btn btn-ghost" href="/" target="_blank" rel="noopener">Open site</a>
           </div>
           <label>Onderhoudsbericht</label>
           <textarea id="maint-msg" rows="3"></textarea>
@@ -204,6 +210,14 @@
       <!-- SHOP -->
       <section class="tab hidden" id="tab-shop">
         <div class="card">
+          <h3>Live Tebex-catalogus</h3>
+          <p class="muted small">Pakketten komen rechtstreeks uit Tebex (niet uit de lege Vercel-cache).</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" data-action="shop-refresh">Catalogus vernieuwen</button>
+          </div>
+          <p class="muted small mt" id="shop-source">Bron: —</p>
+        </div>
+        <div class="card mt">
           <h3>Categorie toevoegen</h3>
           <div class="form-grid">
             <div>
@@ -252,6 +266,22 @@
           </div>
         </div>
         <div id="shop-list" class="mt"></div>
+      </section>
+
+      <!-- DISCORD ROLES -->
+      <section class="tab hidden" id="tab-roles">
+        <div class="card">
+          <h3>Discord rollen bij aankoop</h3>
+          <p class="muted small">
+            Zet per Tebex-pakket een Discord role ID aan. Na betaling krijgt de ingelogde Discord-user die rol.
+          </p>
+          <p class="muted small" id="roles-status">Bot / guild: —</p>
+          <div class="btn-row mt">
+            <button class="btn btn-primary" data-action="roles-reload">Vernieuwen</button>
+            <button class="btn btn-ghost" data-action="roles-sync">Sync naar tebexwrapper</button>
+          </div>
+        </div>
+        <div id="roles-list" class="mt"></div>
       </section>
 
       <!-- LEADERBOARDS -->
