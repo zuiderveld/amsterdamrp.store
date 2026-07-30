@@ -1,0 +1,24 @@
+{
+  "payments": [
+    {
+      "name": "NovaKing",
+      "packages": ["VIP Goud"],
+      "date": "2026-07-30T11:00:00.000Z"
+    },
+    {
+      "name": "DutchShadow",
+      "packages": ["5.000 Coins"],
+      "date": "2026-07-30T10:54:00.000Z"
+    },
+    {
+      "name": "BlueViper",
+      "packages": ["Arctic Camo Pack"],
+      "date": "2026-07-30T10:47:00.000Z"
+    },
+    {
+      "name": "RookieNL",
+      "packages": ["VIP Brons"],
+      "date": "2026-07-30T10:30:00.000Z"
+    }
+  ]
+}

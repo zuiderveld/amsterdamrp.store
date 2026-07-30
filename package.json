@@ -1,0 +1,19 @@
+{
+  "name": "amsterdamrp-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "express-session": "^1.19.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

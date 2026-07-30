@@ -1,0 +1,25 @@
+{
+  "coins": [
+    { "name": "NovaKing", "value": 184250 },
+    { "name": "DutchShadow", "value": 152100 },
+    { "name": "AmsterdamOG", "value": 141880 },
+    { "name": "BlueViper", "value": 99840 },
+    { "name": "RookieNL", "value": 76220 },
+    { "name": "PixelPilot", "value": 54110 },
+    { "name": "NightRider", "value": 38890 },
+    { "name": "CityRunner", "value": 22140 }
+  ],
+  "spent": [
+    { "name": "AmsterdamOG", "value": 92000 },
+    { "name": "NovaKing", "value": 87500 },
+    { "name": "DutchShadow", "value": 64000 },
+    { "name": "BlueViper", "value": 41000 },
+    { "name": "PixelPilot", "value": 28500 }
+  ],
+  "spentWeekly": [
+    { "name": "BlueViper", "value": 12500 },
+    { "name": "NovaKing", "value": 9800 },
+    { "name": "RookieNL", "value": 7200 },
+    { "name": "NightRider", "value": 4100 }
+  ]
+}

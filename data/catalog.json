@@ -1,0 +1,108 @@
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "VIP Pakketten",
+      "slug": "vip-pakketten",
+      "description": "Word VIP en geniet van exclusieve voordelen in de stad.",
+      "packages": [
+        {
+          "id": 101,
+          "name": "VIP Brons",
+          "slug": "vip-pakketten",
+          "description": "Starter VIP met exclusieve voordelen en tags.",
+          "image": "/assets/img/logo-t.png",
+          "totalPrice": 9.99,
+          "discount": 0,
+          "currency": "EUR"
+        },
+        {
+          "id": 102,
+          "name": "VIP Zilver",
+          "slug": "vip-pakketten",
+          "description": "Meer voordelen, prioriteit in queue en speciale emotes.",
+          "image": "/assets/img/logo-t.png",
+          "totalPrice": 19.99,
+          "discount": 5,
+          "currency": "EUR"
+        },
+        {
+          "id": 103,
+          "name": "VIP Goud",
+          "slug": "vip-pakketten",
+          "description": "Het ultieme VIP-pakket met alle voordelen.",
+          "image": "/assets/img/logo-t.png",
+          "totalPrice": 29.99,
+          "discount": 10,
+          "currency": "EUR"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Coins",
+      "slug": "coins",
+      "description": "Koop coins om in-game te besteden.",
+      "packages": [
+        {
+          "id": 201,
+          "name": "1.000 Coins",
+          "slug": "coins",
+          "description": "Kleine coin pack voor starters.",
+          "image": "/assets/img/logo-t.png",
+          "totalPrice": 4.99,
+          "discount": 0,
+          "currency": "EUR"
+        },
+        {
+          "id": 202,
+          "name": "5.000 Coins",
+          "slug": "coins",
+          "description": "Populaire coin pack met bonus.",
+          "image": "/assets/img/logo-t.png",
+          "totalPrice": 19.99,
+          "discount": 2.5,
+          "currency": "EUR"
+        },
+        {
+          "id": 203,
+          "name": "Coin Bundle XL",
+          "slug": "coins",
+          "description": "Maximale waarde voor serieuze spelers.",
+          "image": "/assets/img/logo-t.png",
+          "totalPrice": 49.99,
+          "discount": 0,
+          "currency": "EUR"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Wapen Skins",
+      "slug": "wapen-skins",
+      "description": "Unieke skins voor je favoriete wapens.",
+      "packages": [
+        {
+          "id": 301,
+          "name": "Arctic Camo Pack",
+          "slug": "wapen-skins",
+          "description": "Winter camo set voor meerdere wapens.",
+          "image": "/assets/img/presets/arctic.svg",
+          "totalPrice": 7.99,
+          "discount": 0,
+          "currency": "EUR"
+        },
+        {
+          "id": 302,
+          "name": "Woodland Pack",
+          "slug": "wapen-skins",
+          "description": "Bos camo voor discrete operaties.",
+          "image": "/assets/img/presets/woodland.svg",
+          "totalPrice": 7.99,
+          "discount": 1.5,
+          "currency": "EUR"
+        }
+      ]
+    }
+  ]
+}

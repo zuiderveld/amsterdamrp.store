@@ -1,0 +1,33 @@
+{
+  "maintenance": false,
+  "maintenanceMessage": "We zijn even bezig met onderhoud. Kom zo terug!",
+  "sitePublic": true,
+  "announcement": "",
+  "announcementEnabled": false,
+  "announcementHistory": [
+    {
+      "text": "🔄 SERVER RESTART OVER ENKELE MINUTEN | SLA OP WAT JE DOET",
+      "at": "2026-07-30T13:08:02.735Z"
+    },
+    {
+      "text": "⚡ WEEKEND EVENT LIVE! | SPEEL MEE EN WIN PRIJZEN | JOIN NU",
+      "at": "2026-07-30T13:07:58.016Z"
+    },
+    {
+      "text": "🎉 SERVER OPENING! | ONTVANG DIRECT INGAME ⚡ | 11K+ DISCORD LEDEN!",
+      "at": "2026-07-30T13:00:00.000Z"
+    }
+  ],
+  "server": {
+    "name": "Amsterdam Roleplay",
+    "online": 0,
+    "max": 512,
+    "onlineMode": "live"
+  },
+  "discordMembers": 522,
+  "discordInvite": "https://discord.gg/rRSeCBb25A",
+  "cfxJoin": "https://cfx.re/join/pga9aey",
+  "cfxCode": "pga9aey",
+  "adminRoleId": "1521182074118082599",
+  "guildId": "1521182073967083610"
+}
