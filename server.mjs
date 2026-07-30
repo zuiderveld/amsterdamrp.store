@@ -90,6 +90,7 @@ function ensureDataFiles() {
     "announcement.json",
     "claims.json",
     "orders.json",
+    "payments-settings.json",
   ]) {
     const dest = path.join(DATA, file);
     const src = path.join(SEED_DATA, file);
@@ -1042,23 +1043,28 @@ app.get("/api/admin/settings", requireAdmin, async (_req, res) => {
 
 app.put("/api/admin/settings", requireAdmin, async (req, res) => {
   const current = await getSettingsAsync();
-  const next = { ...current, ...req.body, adminRoleId: ADMIN_ROLE_ID };
-  if (req.body.server) next.server = { ...current.server, ...req.body.server };
-  if (req.body.payments) {
+  const body = { ...req.body };
+  // Client-only / ephemeral velden nooit opslaan
+  delete body._stripeConfigured;
+  delete body.paymentMethods;
+
+  const next = { ...current, ...body, adminRoleId: ADMIN_ROLE_ID };
+  if (body.server) next.server = { ...current.server, ...body.server };
+  if (body.payments && typeof body.payments === "object") {
     next.payments = {
-      ...(current.payments || { stripe: false, tebex: false }),
-      ...req.body.payments,
+      stripe: Boolean(body.payments.stripe),
+      tebex: Boolean(body.payments.tebex),
     };
   }
 
   if (
-    typeof req.body.announcement === "string" &&
-    req.body.announcement.trim() &&
-    req.body.announcementEnabled !== false &&
-    req.body.announcement.trim() !== (current.announcement || "").trim()
+    typeof body.announcement === "string" &&
+    body.announcement.trim() &&
+    body.announcementEnabled !== false &&
+    body.announcement.trim() !== (current.announcement || "").trim()
   ) {
     const history = Array.isArray(current.announcementHistory) ? current.announcementHistory : [];
-    history.unshift({ text: req.body.announcement.trim(), at: new Date().toISOString() });
+    history.unshift({ text: body.announcement.trim(), at: new Date().toISOString() });
     next.announcementHistory = history.slice(0, 30);
   }
   if (!Array.isArray(next.announcementHistory)) next.announcementHistory = current.announcementHistory || [];
@@ -1071,7 +1077,15 @@ app.put("/api/admin/settings", requireAdmin, async (req, res) => {
   }
 
   const saved = await persistSettings(next);
-  // Also keep a dedicated announcement snapshot for cold-start fallbacks
+  // Snapshot betaalmethodes (zelfde patroon als announcement) tegen cold-start verlies
+  try {
+    writeJson("payments-settings.json", {
+      payments: next.payments,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {
+    /* ignore */
+  }
   try {
     writeJson("announcement.json", {
       enabled: Boolean(next.announcementEnabled && next.announcement),
@@ -1081,7 +1095,14 @@ app.put("/api/admin/settings", requireAdmin, async (req, res) => {
   } catch {
     /* ignore */
   }
-  res.json({ ok: true, settings: next, durable: saved.durable });
+
+  const settings = normalizeSettings(next);
+  res.json({
+    ok: true,
+    settings: { ...settings, _stripeConfigured: isStripeConfigured() },
+    durable: saved.durable,
+    paymentMethods: getEnabledPaymentMethods(settings),
+  });
 });
 
 app.get("/api/announcements", async (_req, res) => {

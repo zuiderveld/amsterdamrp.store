@@ -511,11 +511,20 @@ async function reloadAll(opts = {}) {
 
 async function saveSettings(patch) {
   const body = { ...settings, ...patch };
+  delete body._stripeConfigured;
+  delete body.paymentMethods;
   if (patch.server) body.server = { ...settings.server, ...patch.server };
+  if (patch.payments) {
+    body.payments = {
+      stripe: Boolean(patch.payments.stripe),
+      tebex: Boolean(patch.payments.tebex),
+    };
+  }
   const res = await api("/api/admin/settings", { method: "PUT", body: JSON.stringify(body) });
   settings = res.settings;
   fillForms();
   toast("Opgeslagen");
+  return res;
 }
 
 async function handleAction(action) {
@@ -657,19 +666,19 @@ async function handleAction(action) {
           guildId: $("#link-guild").value,
         });
         break;
-      case "save-payments":
-        await saveSettings({
-          payments: {
-            stripe: $("#pay-stripe")?.value === "on",
-            tebex: $("#pay-tebex")?.value === "on",
-          },
-        });
+      case "save-payments": {
+        const payments = {
+          stripe: $("#pay-stripe")?.value === "on",
+          tebex: $("#pay-tebex")?.value === "on",
+        };
+        await saveSettings({ payments });
         toast(
-          $("#pay-stripe")?.value === "on" || $("#pay-tebex")?.value === "on"
-            ? "Betaalmethodes opgeslagen"
+          payments.stripe || payments.tebex
+            ? `Opgeslagen — Stripe: ${payments.stripe ? "On" : "Off"}, Tebex: ${payments.tebex ? "On" : "Off"}`
             : "Alles uit — checkout gaat naar Discord"
         );
         break;
+      }
       case "add-category":
         await api("/api/admin/catalog/category", {
           method: "POST",
@@ -952,6 +961,26 @@ function syncDiscordRoleField() {
 }
 $("#pkg-discord-enabled")?.addEventListener("change", syncDiscordRoleField);
 syncDiscordRoleField();
+
+// Betaalmethodes: direct opslaan bij wijzigen (niet alleen via knop)
+async function autosavePayments() {
+  try {
+    const payments = {
+      stripe: $("#pay-stripe")?.value === "on",
+      tebex: $("#pay-tebex")?.value === "on",
+    };
+    await saveSettings({ payments });
+    toast(
+      payments.stripe || payments.tebex
+        ? `Stripe ${payments.stripe ? "On" : "Off"} · Tebex ${payments.tebex ? "On" : "Off"}`
+        : "Alles uit → Discord-checkout"
+    );
+  } catch (err) {
+    toast(err.message || "Opslaan mislukt");
+  }
+}
+$("#pay-stripe")?.addEventListener("change", autosavePayments);
+$("#pay-tebex")?.addEventListener("change", autosavePayments);
 
 $("#logout")?.addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: "{}" });

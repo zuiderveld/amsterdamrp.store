@@ -42,6 +42,5 @@
   "payments": {
     "stripe": false,
     "tebex": false
-  },
-  "_stripeConfigured": false
+  }
 }
