@@ -137,16 +137,6 @@
           "discount": 0,
           "currency": "EUR",
           "type": "single"
-        },
-        {
-          "id": 1785435613676,
-          "name": "Nieuw pakket",
-          "slug": "coins",
-          "description": "",
-          "image": "/assets/img/logo-t.png",
-          "totalPrice": 0,
-          "discount": 0,
-          "currency": "EUR"
         }
       ]
     },
@@ -169,39 +159,6 @@
           "type": "single"
         }
       ]
-    },
-    {
-      "id": 1785435610319,
-      "name": "test",
-      "slug": "test",
-      "description": "",
-      "packages": []
-    },
-    {
-      "id": "ingame-killmessages",
-      "name": "killmessages",
-      "slug": "killmessages",
-      "categoryKey": "killmessages",
-      "description": "",
-      "packages": [
-        {
-          "id": "vip",
-          "name": "Kill messages - VIP",
-          "slug": "killmessages",
-          "description": "Iemand vermoord in de stad? Jouw custom tekst komt in iedereen zijn beeld die je vermoord. /killmessage om het te activeren!",
-          "image": "https://i.postimg.cc/tJZgq45C/vip.png",
-          "totalPrice": 15,
-          "discount": 0,
-          "currency": "COINS",
-          "ingameType": "item",
-          "amount": 1,
-          "syncIngame": true,
-          "source": "ingame",
-          "categoryKey": "killmessages",
-          "ingame": true
-        }
-      ],
-      "source": "ingame"
     }
   ]
 }

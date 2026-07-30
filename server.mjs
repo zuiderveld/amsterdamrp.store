@@ -58,6 +58,11 @@ import {
   retrieveStripeSession,
 } from "./lib/stripe.mjs";
 import {
+  createClaimForOrder,
+  getClaimByOrderId,
+  redeemClaimCode,
+} from "./lib/claims.mjs";
+import {
   hasDurableSettingsStore,
   loadSettingsAsync,
   saveSettingsAsync,
@@ -83,6 +88,8 @@ function ensureDataFiles() {
     "payments.json",
     "role-grants.json",
     "announcement.json",
+    "claims.json",
+    "orders.json",
   ]) {
     const dest = path.join(DATA, file);
     const src = path.join(SEED_DATA, file);
@@ -181,7 +188,7 @@ function getEnabledPaymentMethods(settings = getSettings()) {
 }
 
 async function fulfillPaidOrder({ order, userId }) {
-  if (!order) return { granted: [] };
+  if (!order) return { granted: [], claim: null };
   const packageIds = (order.items || []).map((i) => Number(i.id)).filter((id) => id > 0);
   const { roleIds, matchedPackages } = roleIdsForPackages(packageIds);
   let granted = [];
@@ -204,8 +211,31 @@ async function fulfillPaidOrder({ order, userId }) {
       });
     }
   }
-  updateOrder(order.id, { status: "paid", paidAt: new Date().toISOString(), granted });
-  return { granted, matchedPackages };
+
+  // Stripe/native claim-code voor ingame (/claimstore) — geen Tebex
+  let claim = getClaimByOrderId(order.id);
+  if (!claim) {
+    try {
+      const catalog = await getLiveCatalog();
+      const redeem = readRedeemPackages();
+      claim = createClaimForOrder({
+        order,
+        catalog,
+        redeemPackages: redeem.packages || {},
+      });
+    } catch (err) {
+      console.error("claim create:", err.message);
+    }
+  }
+
+  updateOrder(order.id, {
+    status: "paid",
+    paidAt: new Date().toISOString(),
+    granted,
+    claimCode: claim?.code || null,
+    claimCoins: claim?.coins ?? null,
+  });
+  return { granted, matchedPackages, claim };
 }
 
 function getSettings() {
@@ -692,8 +722,12 @@ app.post("/api/store/checkout", async (req, res) => {
           mode: "native",
           orderId: created.order.id,
           granted: fulfilled.granted,
-          message: `Bestelling ${created.order.id} geplaatst.`,
-          checkout: `${base}/doneren/cart?ordered=1&order=${encodeURIComponent(created.order.id)}`,
+          claimCode: fulfilled.claim?.code || null,
+          claimCoins: fulfilled.claim?.coins ?? null,
+          message: fulfilled.claim?.code
+            ? `Bestelling geplaatst. In-game: /claimstore ${fulfilled.claim.code}`
+            : `Bestelling ${created.order.id} geplaatst.`,
+          checkout: `${base}/doneren/cart?ordered=1&order=${encodeURIComponent(created.order.id)}&claim=${encodeURIComponent(fulfilled.claim?.code || "")}`,
         });
       }
 
@@ -776,7 +810,16 @@ app.get("/api/store/stripe/confirm", async (req, res) => {
     if (!order) return res.json({ ok: false, reason: "order_not_found" });
 
     if (order.status === "paid") {
-      return res.json({ ok: true, alreadyPaid: true, orderId: order.id, granted: order.granted || [] });
+      const claim = getClaimByOrderId(order.id);
+      return res.json({
+        ok: true,
+        alreadyPaid: true,
+        orderId: order.id,
+        granted: order.granted || [],
+        claimCode: claim?.code || order.claimCode || null,
+        claimCoins: claim?.coins ?? order.claimCoins ?? null,
+        claimStatus: claim?.status || null,
+      });
     }
 
     const userId = req.session?.user?.id || order.discord?.id || session.metadata?.discordId;
@@ -790,11 +833,52 @@ app.get("/api/store/stripe/confirm", async (req, res) => {
       provider: "stripe",
       verified: true,
     };
-    return res.json({ ok: true, orderId: order.id, granted: fulfilled.granted || [] });
+    return res.json({
+      ok: true,
+      orderId: order.id,
+      granted: fulfilled.granted || [],
+      claimCode: fulfilled.claim?.code || null,
+      claimCoins: fulfilled.claim?.coins ?? null,
+      message: fulfilled.claim?.code
+        ? `Claim in-game met: /claimstore ${fulfilled.claim.code}`
+        : undefined,
+    });
   } catch (err) {
     console.error("stripe confirm:", err);
     return res.json({ ok: false, reason: "stripe_error", detail: err.message });
   }
+});
+
+/** Ingame /claimstore → website (Stripe/native, geen Tebex). */
+app.post("/api/store/claim-code", (req, res) => {
+  const secret = process.env.STORE_CLAIM_SECRET || process.env.STORE_SYNC_SECRET || "";
+  const given = String(req.headers["x-store-secret"] || req.body?.secret || "");
+  if (secret && given !== secret) {
+    return res.status(401).json({ ok: false, reason: "unauthorized" });
+  }
+
+  const code = req.body?.code || req.query?.code;
+  const result = redeemClaimCode(code, {
+    license: req.body?.license,
+    fivem: req.body?.fivem,
+    serverId: req.body?.serverId,
+    name: req.body?.name,
+  });
+
+  if (!result.ok) {
+    return res.json(result);
+  }
+
+  return res.json({
+    ok: true,
+    code: result.claim.code,
+    coins: result.coins,
+    packages: result.packages,
+    orderId: result.orderId,
+    message: result.coins > 0
+      ? `Je ontvangt ${result.coins} coins`
+      : "Code geclaimd (geen coins gekoppeld — check pakket mapping)",
+  });
 });
 
 app.post("/api/store/claim-roles", async (req, res) => {
