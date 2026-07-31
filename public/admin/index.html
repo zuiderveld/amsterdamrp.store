@@ -3,29 +3,49 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin | Amsterdam Roleplay</title>
+  <title>Inloggen — Amsterdam Roleplay</title>
+  <meta name="theme-color" content="#030712" />
+  <meta name="robots" content="noindex, nofollow" />
   <link rel="icon" type="image/png" href="/assets/img/logo-t.png" />
-  <link rel="stylesheet" href="/admin/admin.css?v=20260730e" />
+  <link rel="stylesheet" href="/admin/admin.css?v=20260731b" />
 </head>
 <body>
   <div id="gate" class="gate">
-    <img src="/assets/img/logo-t.png" alt="" class="gate-logo" />
-    <h1>Admin Panel</h1>
-    <p>Alleen Discord-leden met de admin-role kunnen hierin.</p>
-    <p class="muted small">Role ID: <code>1521182074118082599</code></p>
-    <div class="row gap">
-      <a class="btn btn-discord" href="/api/auth/discord/login?return=/admin">Inloggen met Discord</a>
-      <a class="btn btn-ghost" href="/">Naar website</a>
+    <div class="gate-brand">
+      <img src="/assets/img/logo-t.png" alt="Amsterdam Roleplay" class="gate-logo" />
+      <div class="gate-brand-text">
+        <span class="gate-brand-name">Amsterdam Roleplay</span>
+        <span class="gate-brand-sub">Dashboard</span>
+      </div>
     </div>
-    <p id="gate-status" class="muted small"></p>
+
+    <div class="gate-card">
+      <div class="gate-card-hairline" aria-hidden="true"></div>
+      <div class="gate-card-head">
+        <h1>Inloggen</h1>
+        <p>Log in met je Discord-account. Alleen accounts met dashboard-toegang komen binnen.</p>
+      </div>
+      <div class="gate-card-body">
+        <a class="btn btn-discord btn-login" href="/api/auth/discord/login?return=/admin">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="discord-icon" aria-hidden="true">
+            <path d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+          </svg>
+          Inloggen met Discord
+        </a>
+        <a class="btn btn-ghost btn-login-secondary" href="/">Naar website</a>
+        <p id="gate-status" class="gate-status"></p>
+      </div>
+      <div class="gate-card-foot">Alleen voor geautoriseerde staff</div>
+    </div>
   </div>
 
   <div id="app" class="app hidden">
     <aside class="sidebar">
       <div class="brand">
         <img src="/assets/img/logo-t.png" alt="" />
-        <div>
-          <strong>ARP Admin</strong>
+        <div class="brand-text">
+          <strong>Amsterdam Roleplay</strong>
+          <span class="brand-sub">Dashboard</span>
           <span id="admin-name">—</span>
         </div>
       </div>
@@ -49,7 +69,10 @@
 
     <main class="main">
       <header class="topbar">
-        <h2 id="page-title">Overzicht</h2>
+        <div class="topbar-title">
+          <span class="section-bar" aria-hidden="true"></span>
+          <h2 id="page-title">Overzicht</h2>
+        </div>
         <div class="status-pill" id="live-pill">—</div>
       </header>
 
@@ -457,6 +480,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="/admin/admin.js?v=20260730h"></script>
+  <script src="/admin/admin.js?v=20260731b"></script>
 </body>
 </html>
